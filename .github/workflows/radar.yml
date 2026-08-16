@@ -25,6 +25,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install --upgrade pip && python -m pip install .
+      - name: Verify Codex API key is configured
+        run: test -n "$CODEX_API_KEY"
       - name: Run research and render
         run: radar run --live
       - name: Commit radar history and timeline
