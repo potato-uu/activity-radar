@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "activity-radar"
+version = "0.1.0"
+description = "Shanghai BD event radar with scored candidates, timeline, and Hermes delivery"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0,<7"]
+
+[project.scripts]
+radar = "activity_radar.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"

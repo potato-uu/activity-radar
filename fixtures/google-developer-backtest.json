@@ -1,0 +1,5 @@
+{
+  "events": [
+    {"name":"Google for Developers Shanghai AI Summit","name_en":"Google for Developers Shanghai AI Summit","date_start":"2026-08-15","date_end":"2026-08-16","city":"上海","venue":"上海展览中心","organizer":"Google for Developers","url":"https://developers.google.cn/events","event_type":"开发者大会","acquisition_score":5.5,"ecosystem_score":8.5,"reason":"Google 开发者与 AI 应用团队会集中出现，能直接接触 SDK 供给侧和平台关系。星图比特的 ChatGPT Ads、GEO 与 AI 应用变现线都能从官方议程和参会者中找到合作入口。","source":"google-developers-cn","first_seen":"2026-07-01"}
+  ]
+}

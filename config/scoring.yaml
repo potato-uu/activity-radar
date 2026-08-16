@@ -1,0 +1,19 @@
+city_scope: [上海, Shanghai]
+webinar_in_push: false
+weights:
+  acquisition:
+    p0: 0.55
+    p1: 0.30
+    p2: 0.15
+  ecosystem:
+    platform_presence: 0.45
+    ai_developers: 0.35
+    channel_ecosystem: 0.20
+tier_rules:
+  A: 8
+  B: 6
+  C: 4
+corrections:
+  domestic_travel: -1
+  invitation_only: -1
+  overseas_forced: C

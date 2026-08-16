@@ -1,0 +1,121 @@
+sources:
+  - id: huodongxing
+    name: 活动行
+    tier: 1
+    url: https://www.huodongxing.com/
+    instruction: "查找上海未来60天的出海、跨境电商、AI、广告、营销活动。"
+    enabled: true
+    cadence: weekly
+    last_hit: null
+  - id: luma-shanghai-ai
+    name: Luma Shanghai AI
+    tier: 1
+    url: https://lu.ma/
+    instruction: "查找 Shanghai AI、开发者、创业者活动，优先上海线下。"
+    enabled: true
+    cadence: weekly
+    last_hit: null
+  - id: baijing
+    name: 白鲸出海活动
+    tier: 1
+    url: https://www.baijing.cn/activity
+    instruction: "查找上海出海、跨境、AI营销活动。"
+    enabled: true
+    cadence: weekly
+    last_hit: null
+  - id: cifnews-ccee
+    name: 雨果网与 CCEE
+    tier: 1
+    url: https://www.cifnews.com/
+    instruction: "查找上海跨境电商、出海营销和 CCEE 相关活动。"
+    enabled: true
+    cadence: weekly
+    last_hit: null
+  - id: morketing
+    name: Morketing 与 Morketing Summit
+    tier: 1
+    url: https://morketing.com/
+    instruction: "查找上海营销、增长、出海峰会。"
+    enabled: true
+    cadence: weekly
+    last_hit: null
+  - id: mosu-space
+    name: 模速空间
+    tier: 1
+    url: https://www.mospace.cn/
+    instruction: "查找上海本地 AI、开发者、模型应用活动。"
+    enabled: true
+    cadence: weekly
+    last_hit: null
+  - id: google-developers-cn
+    name: Google for Developers 中国活动
+    tier: 1
+    url: https://developers.google.cn/events
+    instruction: "查找 Google 官方在上海或中国举办的开发者、AI、广告相关活动。"
+    enabled: true
+    cadence: weekly
+    last_hit: null
+  - id: openai-news-events
+    name: OpenAI 官方活动与公告
+    tier: 1
+    url: https://openai.com/news/
+    instruction: "查找 OpenAI 官方上海或中国相关活动、发布会、开发者活动。"
+    enabled: true
+    cadence: weekly
+    last_hit: null
+  - id: jufair
+    name: 聚展网
+    tier: 1
+    url: https://www.jufair.com/
+    instruction: "查找上海跨境电商、广告、营销、AI 展会。"
+    enabled: true
+    cadence: weekly
+    last_hit: null
+  - id: amz123
+    name: AMZ123
+    tier: 2
+    url: https://www.amz123.com/
+    instruction: "查找上海亚马逊、独立站和出海电商活动。"
+    enabled: true
+    cadence: biweekly
+    last_hit: null
+  - id: yibang
+    name: 亿邦动力
+    tier: 2
+    url: https://www.ebrun.com/
+    instruction: "查找上海电商、跨境和品牌出海活动。"
+    enabled: true
+    cadence: biweekly
+    last_hit: null
+  - id: meetup-shanghai-ai
+    name: Meetup ShanghAI
+    tier: 2
+    url: https://www.meetup.com/
+    instruction: "查找上海 AI 开发者 meetup。"
+    enabled: true
+    cadence: biweekly
+    last_hit: null
+  - id: eventbrite-shanghai-ai
+    name: Eventbrite Shanghai AI
+    tier: 2
+    url: https://www.eventbrite.com/
+    instruction: "查找上海 AI、开发者和创业活动。"
+    enabled: true
+    cadence: biweekly
+    last_hit: null
+  - id: snec-re
+    name: SNEC / RE+ / Intersolar
+    tier: 2
+    url: https://www.snec.org.cn/
+    instruction: "查找上海光伏、新能源出海相关展会，保留 P2 降权线索。"
+    enabled: true
+    cadence: biweekly
+    last_hit: null
+  - id: annual-ai-conferences
+    name: WAIC / 外滩大会 / 云栖大会
+    tier: 2
+    url: https://www.waic.com/
+    instruction: "查找年度 AI 大会在上海的官方日期、报名和议程更新。"
+    enabled: true
+    cadence: biweekly
+    last_hit: null
