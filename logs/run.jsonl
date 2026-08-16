@@ -14,3 +14,20 @@
 {"error": "No CODEX_API_KEY, OPENAI_API_KEY, or LM_API_KEY was found", "kind": "discover_error", "source": "snec-re", "timestamp": "2026-08-16T10:32:47+00:00"}
 {"error": "No CODEX_API_KEY, OPENAI_API_KEY, or LM_API_KEY was found", "kind": "discover_error", "source": "annual-ai-conferences", "timestamp": "2026-08-16T10:32:47+00:00"}
 {"api_cost": null, "api_cost_status": "logged_unknown", "candidate_count": 0, "kind": "run_summary", "source_count": 15, "timestamp": "2026-08-16T10:32:47+00:00"}
+{"error": "Responses API failed after 3 attempts: The read operation timed out", "kind": "discover_error", "source": "huodongxing", "timestamp": "2026-08-16T10:41:04+00:00"}
+{"error": "Responses API failed after 3 attempts: The read operation timed out", "kind": "discover_error", "source": "luma-shanghai-ai", "timestamp": "2026-08-16T10:45:38+00:00"}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "baijing", "timestamp": "2026-08-16T10:49:53+00:00", "usage": {"cost_usd": null, "input_tokens": 56218, "output_tokens": 3034}}
+{"error": "Responses API failed after 3 attempts: The read operation timed out", "kind": "discover_error", "source": "cifnews-ccee", "timestamp": "2026-08-16T10:54:28+00:00"}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "morketing", "timestamp": "2026-08-16T10:55:56+00:00", "usage": {"cost_usd": null, "input_tokens": 62845, "output_tokens": 3727}}
+{"api_cost": null, "candidate_count": 1, "kind": "discover", "source": "mosu-space", "timestamp": "2026-08-16T10:56:56+00:00", "usage": {"cost_usd": null, "input_tokens": 48191, "output_tokens": 2129}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "google-developers-cn", "timestamp": "2026-08-16T10:57:47+00:00", "usage": {"cost_usd": null, "input_tokens": 35119, "output_tokens": 2299}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "openai-news-events", "timestamp": "2026-08-16T10:58:05+00:00", "usage": {"cost_usd": null, "input_tokens": 19993, "output_tokens": 815}}
+{"error": "Responses API failed after 3 attempts: The read operation timed out", "kind": "discover_error", "source": "jufair", "timestamp": "2026-08-16T11:02:40+00:00"}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "amz123", "timestamp": "2026-08-16T11:06:44+00:00", "usage": {"cost_usd": null, "input_tokens": 47854, "output_tokens": 2622}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "yibang", "timestamp": "2026-08-16T11:11:14+00:00", "usage": {"cost_usd": null, "input_tokens": 69908, "output_tokens": 3602}}
+{"error": "Responses API failed after 3 attempts: The read operation timed out", "kind": "discover_error", "source": "meetup-shanghai-ai", "timestamp": "2026-08-16T11:15:49+00:00"}
+{"error": "Responses API failed after 3 attempts: The read operation timed out", "kind": "discover_error", "source": "eventbrite-shanghai-ai", "timestamp": "2026-08-16T11:20:23+00:00"}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "snec-re", "timestamp": "2026-08-16T11:21:42+00:00", "usage": {"cost_usd": null, "input_tokens": 62186, "output_tokens": 3242}}
+{"api_cost": null, "candidate_count": 1, "kind": "discover", "source": "annual-ai-conferences", "timestamp": "2026-08-16T11:23:00+00:00", "usage": {"cost_usd": null, "input_tokens": 48577, "output_tokens": 3475}}
+{"api_cost": null, "candidate_count": 2, "kind": "score", "timestamp": "2026-08-16T11:23:38+00:00", "usage": {"cost_usd": null, "input_tokens": 5017, "output_tokens": 1994}}
+{"api_cost": null, "api_cost_status": "logged_unknown", "candidate_count": 2, "kind": "run_summary", "source_count": 15, "timestamp": "2026-08-16T11:23:38+00:00"}
