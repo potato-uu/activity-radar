@@ -24,13 +24,13 @@ def test_same_event_repeated_run_is_unchanged():
 
 def test_changed_date_marks_changed():
     first = event()
-    second = event(date_start="2026-09-02", date_end="2026-09-02")
+    second = event(date_start="2026-09-15", date_end="2026-09-15")
     merged, _ = merge_events([], [first], {"上海"}, {})
     merged, stats = merge_events(merged, [second], {"上海"}, {})
     assert len(merged) == 1
     assert stats["changed"] == 1
     assert merged[0].status == "changed"
-    assert merged[0].date_start == "2026-09-02"
+    assert merged[0].date_start == "2026-09-15"
 
 
 def test_d_tier_is_dropped_and_webinar_is_c():

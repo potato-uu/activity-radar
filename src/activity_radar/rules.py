@@ -19,10 +19,12 @@ def make_id(name: str, date_start: str, url: str = "") -> str:
 
 
 def same_event(left: Event, right: Event) -> bool:
+    score = SequenceMatcher(None, normalize_name(left.name), normalize_name(right.name)).ratio()
+    if left.url and right.url and left.url.rstrip("/") == right.url.rstrip("/") and score >= 0.88:
+        return True
     ldate, rdate = parse_iso(left.date_start), parse_iso(right.date_start)
     if ldate and rdate and abs((ldate - rdate).days) > 3:
         return False
-    score = SequenceMatcher(None, normalize_name(left.name), normalize_name(right.name)).ratio()
     if left.url and right.url and left.url.rstrip("/") == right.url.rstrip("/"):
         return score >= 0.88 or (ldate == rdate and score >= 0.65)
     return score >= 0.78
