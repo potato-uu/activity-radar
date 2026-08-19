@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stan.activity-radar.push</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>/Users/stan/Documents/Stan BD商务/scripts/push_local.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/stan/Documents/Stan BD商务</string>
+  <key>StartCalendarInterval</key>
+  <dict><key>Minute</key><integer>5</integer></dict>
+  <key>StandardOutPath</key>
+  <string>/Users/stan/Documents/Stan BD商务/logs/launchagent.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/stan/Documents/Stan BD商务/logs/launchagent.log</string>
+</dict>
+</plist>

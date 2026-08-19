@@ -7,7 +7,7 @@ name = "activity-radar"
 version = "0.1.0"
 description = "Shanghai BD event radar with scored candidates, timeline, and Hermes delivery"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6.0,<7"]
+dependencies = ["PyYAML>=6.0,<7", "beautifulsoup4>=4.12,<5", "playwright>=1.50,<2"]
 
 [project.scripts]
 radar = "activity_radar.cli:main"

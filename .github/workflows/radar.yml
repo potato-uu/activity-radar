@@ -3,8 +3,10 @@ name: Shanghai activity radar
 on:
   workflow_dispatch:
   schedule:
-    # Monday 08:00 Asia/Shanghai = Monday 00:00 UTC.
-    - cron: "0 0 * * 1"
+    # Sunday 16:00 Asia/Shanghai = Sunday 08:00 UTC (full).
+    - cron: "0 8 * * 0"
+    # Wednesday 08:00 Asia/Shanghai = Wednesday 00:00 UTC (delta).
+    - cron: "0 0 * * 3"
 
 permissions:
   contents: write
@@ -14,6 +16,7 @@ permissions:
 jobs:
   research-and-publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
       CODEX_BASE_URL: ${{ vars.CODEX_BASE_URL }}
@@ -28,10 +31,19 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install --upgrade pip && python -m pip install .
+      - run: python -m playwright install --with-deps chromium
       - name: Verify Codex API key is configured
         run: test -n "$CODEX_API_KEY"
+      - name: Select push mode
+        id: push-mode
+        run: |
+          if [ "${{ github.event.schedule }}" = "0 0 * * 3" ]; then
+            echo "mode=delta" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          fi
       - name: Run research and render
-        run: radar run --live
+        run: radar run --live --push-mode "${{ steps.push-mode.outputs.mode }}"
       - name: Commit radar history and timeline
         run: |
           git config user.name "github-actions[bot]"

@@ -8,7 +8,9 @@ EVENT_FIELDS = (
     "id", "name", "name_en", "date_start", "date_end", "city", "venue",
     "organizer", "url", "ticket_price", "register_deadline", "event_type",
     "acquisition_score", "ecosystem_score", "tier", "action", "reason",
-    "source", "first_seen", "last_verified", "status",
+    "source", "first_seen", "last_verified", "status", "date_precision",
+    "audience_side", "scale_hint", "format", "is_series", "occurrences",
+    "side_event_opportunity", "related_to", "score_history", "needs_review",
 )
 
 
@@ -35,6 +37,16 @@ class Event:
     first_seen: str = ""
     last_verified: str = ""
     status: str = "active"
+    date_precision: str = "day"
+    audience_side: str = "mixed"
+    scale_hint: str = "unknown"
+    format: str = "open"
+    is_series: bool = False
+    occurrences: list[str] = field(default_factory=list)
+    side_event_opportunity: bool = False
+    related_to: str = ""
+    score_history: list[dict[str, Any]] = field(default_factory=list)
+    needs_review: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -42,6 +54,11 @@ class Event:
         values = {key: data.get(key, getattr(cls, key, "")) for key in EVENT_FIELDS}
         values["acquisition_score"] = float(values.get("acquisition_score") or 0)
         values["ecosystem_score"] = float(values.get("ecosystem_score") or 0)
+        values["is_series"] = bool(values.get("is_series"))
+        values["occurrences"] = list(values.get("occurrences") or [])
+        values["side_event_opportunity"] = bool(values.get("side_event_opportunity"))
+        values["score_history"] = list(values.get("score_history") or [])
+        values["needs_review"] = bool(values.get("needs_review"))
         values["metadata"] = data.get("metadata", {})
         return cls(**values)
 
@@ -58,16 +75,16 @@ def validate_event(event: Event) -> list[str]:
         errors.append("id and name are required")
     if not event.url:
         errors.append("url is required")
-    if event.city not in {"上海", "Shanghai"}:
-        errors.append("city is outside the configured Shanghai scope")
+    if not event.city:
+        errors.append("city is required")
     if not 0 <= event.acquisition_score <= 10:
         errors.append("acquisition_score must be 0..10")
     if not 0 <= event.ecosystem_score <= 10:
         errors.append("ecosystem_score must be 0..10")
-    if event.tier not in {"A", "B", "C"}:
-        errors.append("tier must be A, B, or C")
-    if event.status not in {"active", "changed", "cancelled"}:
-        errors.append("status must be active, changed, or cancelled")
+    if event.tier not in {"A", "B", "C", "D"}:
+        errors.append("tier must be A, B, C, or D")
+    if event.status not in {"active", "expected", "changed", "cancelled"}:
+        errors.append("status must be active, expected, changed, or cancelled")
     return errors
 
 

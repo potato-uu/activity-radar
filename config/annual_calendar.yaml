@@ -1,0 +1,132 @@
+events:
+  - id: waic
+    name: 世界人工智能大会 WAIC
+    typical_month: 7
+    city: 上海
+    official_url: https://www.worldaic.com.cn/
+    why_it_matters: 平台方、品牌方与 AI 生态密度高，适合识别 side event 机会。
+    last_known_dates: 2026-07
+  - id: inclusion-bund-conference
+    name: 2026 外滩大会
+    typical_month: 9
+    city: 上海
+    official_url: https://www.inclusionconf.com/
+    why_it_matters: 金融科技、AI 平台与品牌营销负责人集中。
+    last_known_dates: 2026-09-09/2026-09-12
+  - id: apsara-conference
+    name: 2026 云栖大会
+    typical_month: 9
+    city: 杭州
+    official_url: https://www.alibabacloud.com/zh/apsara-conference
+    why_it_matters: 阿里云官方大会，平台生态与出海企业密度高。
+    last_known_dates: 2026-09-22/2026-09-24
+    confirmed_dates: {start: 2026-09-22, end: 2026-09-24}
+  - id: roi-festival
+    name: 2026 金投赏
+    typical_month: 10
+    city: 上海
+    official_url: https://www.roifestival.com/
+    why_it_matters: 广告主、品牌 marketing 负责人和代理商集中。
+    last_known_dates: 2026-10 中旬
+  - id: ciie
+    name: 第九届中国国际进口博览会
+    typical_month: 11
+    city: 上海
+    official_url: https://www.ciie.org/
+    why_it_matters: 大型品牌方与跨境业务负责人集中。
+    last_known_dates: 2026-11-05/2026-11-10
+    confirmed_dates: {start: 2026-11-05, end: 2026-11-10}
+  - id: wic-wuzhen
+    name: 世界互联网大会乌镇峰会
+    typical_month: 11
+    city: 嘉兴
+    official_url: https://www.wicinternet.org/
+    why_it_matters: 互联网平台、政府与企业决策者密度高。
+    last_known_dates: 11 月
+  - id: google-devfest-shanghai
+    name: 2026 Google DevFest 上海
+    typical_month: 11
+    city: 上海
+    official_url: https://gdg.community.dev/gdg-shanghai/
+    why_it_matters: Google 官方生态和高密度开发者资源。
+    last_known_dates: 2026-11-07
+    confirmed_dates: {start: 2026-11-07, end: 2026-11-07}
+    event_type: 开发者大会
+  - id: google-developer-conference
+    name: Google 开发者大会
+    typical_month: 8
+    city: 上海
+    official_url: https://developers.google.cn/events
+    why_it_matters: Google 官方平台深度在场。
+    last_known_dates: 2026-08-12
+  - id: aws-china-summit
+    name: 亚马逊云科技中国峰会
+    typical_month: 6
+    city: 上海
+    official_url: https://www.amazonaws.cn/events/
+    why_it_matters: AWS 官方平台、渠道与出海客户生态。
+    last_known_dates: 6 月
+  - id: amazon-global-selling-summit
+    name: 亚马逊全球开店卖家峰会
+    typical_month: 12
+    city: 上海
+    official_url: https://gs.amazon.cn/
+    why_it_matters: P1 亚马逊卖家与出海品牌负责人集中。
+    last_known_dates: 12 月
+  - id: ccee
+    name: CCEE 雨果跨境电商选品大会
+    typical_month: [3, 9]
+    city: 上海
+    official_url: https://www.cifnews.com/
+    why_it_matters: 跨境卖家、品牌方与服务生态集中。
+    last_known_dates: 春季/秋季
+  - id: china-advertising-festival
+    name: 中国国际广告节
+    typical_month: 10
+    city: 其他国内
+    official_url: https://www.china-caa.org/
+    why_it_matters: 广告主、媒体与代理商生态。
+    last_known_dates: 10 月
+  - id: apppexpo
+    name: 上海国际广告技术设备展
+    typical_month: 3
+    city: 上海
+    official_url: https://www.apppexpo.com/
+    why_it_matters: 广告产业链供给侧为主，低权重观察。
+    last_known_dates: 3 月
+  - id: ebrun-cross-border
+    name: 亿邦跨境与未来零售大会
+    typical_month: [6, 12]
+    city: 上海
+    official_url: https://www.ebrun.com/
+    why_it_matters: 出海品牌、零售决策者和渠道生态。
+    last_known_dates: 年中/年末
+  - id: morketing-summit
+    name: Morketing Summit
+    typical_month: 11
+    city: 上海
+    official_url: https://www.morketing.com/
+    why_it_matters: 品牌 marketing 负责人和营销平台生态。
+    last_known_dates: 年末
+  - id: snec-pv
+    name: SNEC 国际太阳能光伏与智慧能源大会
+    typical_month: 6
+    city: 上海
+    official_url: https://www.snec.org.cn/
+    why_it_matters: P2 新能源与光伏出海负责人集中。
+    last_known_dates: 6 月
+  - id: chinajoy
+    name: ChinaJoy
+    typical_month: 8
+    city: 上海
+    official_url: https://www.chinajoy.net/
+    why_it_matters: 大型泛娱乐大会，可观察平台与品牌 side event，业务权重低。
+    last_known_dates: 7 月末至 8 月初
+  - id: overseas-dev-conferences
+    name: Microsoft Ignite / OpenAI DevDay
+    typical_month: 11
+    city: 海外
+    official_url: https://openai.com/events/
+    why_it_matters: 仅作日历提示，不入库。
+    last_known_dates: 11 月
+    in_scope: false

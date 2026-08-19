@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .io import load_structured
+from .provider import load_local_env
 
 
 def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
@@ -31,14 +32,17 @@ class RadarConfig:
     source_timeout_seconds: int = 180
     source_retries: int = 2
     discovery_concurrency: int = 3
+    window_days: int = 120
 
     @classmethod
     def load(cls, root: Path) -> "RadarConfig":
+        # Load project-local settings before resolving any environment-backed fields.
+        load_local_env(root)
         sources_data = load_structured(root / "config/sources.yaml") or {}
         scoring = load_structured(root / "config/scoring.yaml") or {}
         return cls(
             root=root,
-            sources=sources_data.get("sources", []),
+            sources=[{**source, "_root": str(root)} for source in sources_data.get("sources", [])],
             scoring=scoring,
             events_path=root / "data/events.jsonl",
             logs_path=root / "logs/run.jsonl",
@@ -53,6 +57,7 @@ class RadarConfig:
             discovery_concurrency=_env_int(
                 "RADAR_DISCOVERY_CONCURRENCY", 3, minimum=1, maximum=6
             ),
+            window_days=_env_int("RADAR_WINDOW_DAYS", 120, minimum=30, maximum=365),
         )
 
     @property

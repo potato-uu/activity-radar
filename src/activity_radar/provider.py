@@ -21,7 +21,13 @@ def load_local_env(root: Path) -> None:
                 continue
             key, value = line.split("=", 1)
             key = key.strip()
-            if key in {"CODEX_API_KEY", "OPENAI_API_KEY", "LM_API_KEY", "CODEX_BASE_URL", "OPENAI_BASE_URL", "RADAR_MODEL", "RADAR_INPUT_PRICE_PER_MILLION", "RADAR_OUTPUT_PRICE_PER_MILLION"} and key not in os.environ:
+            if key in {
+                "CODEX_API_KEY", "OPENAI_API_KEY", "LM_API_KEY",
+                "CODEX_BASE_URL", "OPENAI_BASE_URL", "RADAR_MODEL", "RADAR_PUSH_TARGET",
+                "RADAR_SOURCE_TIMEOUT_SECONDS", "RADAR_SOURCE_RETRIES",
+                "RADAR_DISCOVERY_CONCURRENCY", "RADAR_WINDOW_DAYS",
+                "RADAR_INPUT_PRICE_PER_MILLION", "RADAR_OUTPUT_PRICE_PER_MILLION",
+            } and key not in os.environ:
                 os.environ[key] = value.strip().strip('"').strip("'")
 
 
@@ -72,7 +78,7 @@ class OpenAIResponsesClient:
         except ValueError:
             return None
 
-    def request(self, prompt: str, *, web_search: bool = True, retries: int = 3) -> tuple[str, Usage]:
+    def request(self, prompt: str, *, web_search: bool = True, retries: int = 3, temperature: float | None = None) -> tuple[str, Usage]:
         if not self.api_key:
             raise ProviderError("No CODEX_API_KEY, OPENAI_API_KEY, or LM_API_KEY was found")
         payload: dict[str, Any] = {
@@ -81,6 +87,8 @@ class OpenAIResponsesClient:
         }
         if web_search:
             payload["tools"] = [{"type": "web_search"}]
+        if temperature is not None:
+            payload["temperature"] = temperature
         body = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
             f"{self.base_url}/responses",

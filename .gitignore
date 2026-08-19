@@ -8,3 +8,4 @@ build/
 data/push-latest.txt
 .playwright-mcp/
 大正咖啡集团-*/
+.pw-browsers/

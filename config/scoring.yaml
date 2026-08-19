@@ -1,19 +1,48 @@
-city_scope: [上海, Shanghai]
-webinar_in_push: false
+city_scope: [上海, 杭州, 苏州, 南京, 宁波, 无锡, 合肥, 嘉兴, 南通]
+primary_city: 上海
+nearby_cities: [杭州, 苏州, 南京, 宁波, 无锡, 合肥, 嘉兴, 南通]
+title_blacklist:
+  - "skip to main content"
+  - "跳至主要内容"
+  - "报名中"
+  - "全部"
+  - "更多"
+  - "查看更多"
+  - "登录"
+  - "注册"
+  - "menu"
+  - "home"
+platform_official_sources:
+  - google-developers-cn
+  - gdg-east-china
+  - microsoft-reactor-shanghai
+  - aws-china-events
+  - openai-news-events
+  - volcengine-events
+  - aliyun-events
+  - baidu-ai-events
+  - google-ads-think
+  - meta-china-marketing
+  - tiktok-for-business-events
+webinar_in_push: true
 weights:
   acquisition:
     p0: 0.55
     p1: 0.30
     p2: 0.15
   ecosystem:
-    platform_presence: 0.45
-    ai_developers: 0.35
-    channel_ecosystem: 0.20
+    platform_presence: 0.55
+    channel_ecosystem: 0.35
+    ai_developers: 0.10
 tier_rules:
   A: 8
   B: 6
   C: 4
 corrections:
-  domestic_travel: -1
+  supply_acquisition_cap: 4
+  small_open: -2
+  pure_training_acquisition_cap: 3
+  nearby_city: -1
+  other_domestic: -2
   invitation_only: -1
-  overseas_forced: C
+  small_open_salon_cap: 7

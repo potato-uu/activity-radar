@@ -1,121 +1,390 @@
 sources:
+  - id: onepilot
+    name: OnePilot 上海 AI/OPC 活动时间轴
+    adapter: api
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://onepilot.xin/supabase-config.js
+    params: {request_interval_seconds: 2, timeout_seconds: 45, prefer_selectors: true}
+    region_hint: [上海, 线上]
+    notes: 公开匿名只读 Supabase 视图；不访问 admin 路径。
+  - id: calendar-seed
+    name: 年度大会种子日历
+    adapter: calendar_seed
+    tier: 1
+    cadence: weekly
+    enabled: true
+    urls: []
+    params: {path: config/annual_calendar.yaml}
+    region_hint: [上海, 杭州, 嘉兴, 其他国内]
+    notes: 月精度条目标 expected，确切日期条目标 active。
   - id: huodongxing
     name: 活动行
+    adapter: rendered
     tier: 1
-    url: https://www.huodongxing.com/
-    instruction: "查找上海未来60天的出海、跨境电商、AI、广告、营销活动。"
-    enabled: true
     cadence: weekly
-    last_hit: null
+    enabled: true
+    urls:
+      - https://www.huodongxing.com/events?city=%E4%B8%8A%E6%B5%B7
+      - https://www.huodongxing.com/events?city=%E6%9D%AD%E5%B7%9E
+      - https://www.huodongxing.com/events?city=%E8%8B%8F%E5%B7%9E
+      - https://www.huodongxing.com/events?city=%E5%8D%97%E4%BA%AC
+    params: {request_interval_seconds: 2, timeout_seconds: 45, render_wait_ms: 3000, max_candidates: 100}
+    selectors: {item: ".event-card", title: ".title", date: ".date", venue: ".venue", excerpt: ".excerpt", url: ".title"}
+    region_hint: [上海, 杭州, 苏州, 南京]
+    notes: robots.txt 明确 Allow /events；关键词由页面内容和后续评分筛选：出海、跨境、AI、广告、营销、GEO、开发者、独立站、亚马逊。
   - id: luma-shanghai-ai
     name: Luma Shanghai AI
+    adapter: rendered
     tier: 1
-    url: https://lu.ma/
-    instruction: "查找 Shanghai AI、开发者、创业者活动，优先上海线下。"
-    enabled: true
     cadence: weekly
-    last_hit: null
-  - id: baijing
-    name: 白鲸出海活动
+    enabled: true
+    urls: [https://luma.com/shanghai, https://luma.com/aihh-sh]
+    params: {request_interval_seconds: 2, timeout_seconds: 45, render_wait_ms: 3000, max_candidates: 100}
+    selectors: {item: ".event-card", title: ".title", date: ".date", venue: ".venue", excerpt: ".excerpt", url: ".title"}
+    region_hint: [上海]
+    notes: robots.txt 未对普通 user-agent 禁止发现页；Shanghai 发现页与已知 AIHH-SH 日历。
+  - id: bagevent
+    name: 百格活动
+    adapter: html_list
     tier: 1
-    url: https://www.baijing.cn/activity
-    instruction: "查找上海出海、跨境、AI营销活动。"
-    enabled: true
     cadence: weekly
-    last_hit: null
-  - id: cifnews-ccee
-    name: 雨果网与 CCEE
+    enabled: true
+    url: https://www.bagevent.com/eventlist.html
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 100}
+    region_hint: [上海, 杭州, 苏州, 南京]
+    notes: B2B 会议公开列表。
+  - id: hdb
+    name: 互动吧
+    adapter: html_list
     tier: 1
-    url: https://www.cifnews.com/
-    instruction: "查找上海跨境电商、出海营销和 CCEE 相关活动。"
-    enabled: true
     cadence: weekly
-    last_hit: null
-  - id: morketing
-    name: Morketing 与 Morketing Summit
+    enabled: true
+    url: https://www.hdb.com/party/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 100}
+    region_hint: [上海, 杭州, 苏州, 南京]
+    notes: 公开活动列表。
+  - id: 10times
+    name: 10times 华东展会
+    adapter: rendered
     tier: 1
-    url: https://morketing.com/
-    instruction: "查找上海营销、增长、出海峰会。"
-    enabled: true
     cadence: weekly
-    last_hit: null
-  - id: mosu-space
-    name: 模速空间
-    tier: 1
-    url: https://www.mospace.cn/
-    instruction: "查找上海本地 AI、开发者、模型应用活动。"
     enabled: true
-    cadence: weekly
-    last_hit: null
-  - id: google-developers-cn
-    name: Google for Developers 中国活动
-    tier: 1
-    url: https://developers.google.cn/events
-    instruction: "查找 Google 官方在上海或中国举办的开发者、AI、广告相关活动。"
-    enabled: true
-    cadence: weekly
-    last_hit: null
-  - id: openai-news-events
-    name: OpenAI 官方活动与公告
-    tier: 1
-    url: https://openai.com/news/
-    instruction: "查找 OpenAI 官方上海或中国相关活动、发布会、开发者活动。"
-    enabled: true
-    cadence: weekly
-    last_hit: null
+    urls:
+      - https://10times.com/shanghai/tradeshows
+      - https://10times.com/hangzhou-cn/tradeshows
+      - https://10times.com/suzhou-cn/tradeshows
+    params: {request_interval_seconds: 2, timeout_seconds: 45, render_wait_ms: 2500, max_candidates: 120}
+    selectors: {item: ".event-card", title: ".title", date: ".date", venue: ".venue", excerpt: ".excerpt", url: ".title"}
+    region_hint: [上海, 杭州, 苏州]
+    notes: robots.txt 被 Cloudflare challenge 挡住，规则未验证；当前公开请求返回 403，保持 blocked，留给外层真实渲染复核。
   - id: jufair
     name: 聚展网
+    adapter: html_list
     tier: 1
-    url: https://www.jufair.com/
-    instruction: "查找上海跨境电商、广告、营销、AI 展会。"
-    enabled: true
     cadence: weekly
-    last_hit: null
-  - id: amz123
-    name: AMZ123
-    tier: 2
-    url: https://www.amz123.com/
-    instruction: "查找上海亚马逊、独立站和出海电商活动。"
     enabled: true
-    cadence: biweekly
-    last_hit: null
+    urls:
+      - https://www.jufair.com/v-shanghai/m-8/
+      - https://www.jufair.com/v-shanghai/m-9/
+      - https://www.jufair.com/v-shanghai/m-10/
+      - https://www.jufair.com/v-shanghai/m-11/
+      - https://www.jufair.com/v-shanghai/m-12/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 120}
+    region_hint: [上海]
+    notes: 上海月度展会排期。
+  - id: bendibao
+    name: 上海本地宝展会排期
+    adapter: html_list
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://sh.bendibao.com/xiuxian/zhanhuitime/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 100}
+    region_hint: [上海]
+    notes: 上海月度展会排期公开页。
+  - id: google-developers-cn
+    name: Google for Developers 中国活动
+    adapter: jsonld
+    tier: 1
+    cadence: weekly
+    enabled: true
+    urls: [https://developers.google.cn/events, https://developers.google.com/events]
+    params: {request_interval_seconds: 2, timeout_seconds: 45, prefer_selectors: true}
+    selectors: {item: "article.event-card, li.event-card, [data-event-card]", title: "h2 a, h3 a, a.event-title", date: "time, .event-date", venue: ".event-location, .venue", excerpt: ".event-description, .description", url: "h2 a, h3 a, a.event-title"}
+    region_hint: [上海, 杭州, 苏州, 中国]
+    notes: Google 官方开发者活动。
+  - id: gdg-east-china
+    name: GDG 上海/杭州/苏州
+    adapter: html_list
+    tier: 1
+    cadence: weekly
+    enabled: true
+    urls:
+      - https://gdg.community.dev/gdg-shanghai/
+      - https://gdg.community.dev/gdg-hangzhou/
+      - https://gdg.community.dev/gdg-suzhou/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 100}
+    region_hint: [上海, 杭州, 苏州]
+    notes: Bevy 公开章节活动页；若页面无结构化事件则 empty。
+  - id: microsoft-reactor-shanghai
+    name: Microsoft Reactor Shanghai
+    adapter: jsonld
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://developer.microsoft.com/en-us/reactor/events/
+    params: {request_interval_seconds: 2, timeout_seconds: 45}
+    region_hint: [上海, 线上]
+    notes: Microsoft 官方开发者活动。
+  - id: aws-china-events
+    name: AWS 中国活动
+    adapter: jsonld
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://www.amazonaws.cn/events/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, prefer_selectors: true}
+    selectors: {item: "article.event-card, li.event-card, [data-event-card]", title: "h2 a, h3 a, a.event-title", date: "time, .event-date", venue: ".event-location, .venue", excerpt: ".event-description, .description", url: "h2 a, h3 a, a.event-title"}
+    region_hint: [上海, 杭州, 苏州, 南京, 中国]
+    notes: 亚马逊云科技官方活动。
+  - id: openai-news-events
+    name: OpenAI 官方活动与公告
+    adapter: jsonld
+    tier: 1
+    cadence: weekly
+    enabled: true
+    urls: [https://openai.com/events/, https://openai.com/news/]
+    params: {request_interval_seconds: 2, timeout_seconds: 45}
+    region_hint: [上海, 中国, 海外]
+    notes: 海外活动仅作定向核实，不直接入库。
+  - id: volcengine-events
+    name: 火山引擎活动
+    adapter: html_list
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://www.volcengine.com/activity
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    region_hint: [上海, 杭州, 中国]
+    notes: 平台官方公开活动页。
+  - id: aliyun-events
+    name: 阿里云活动
+    adapter: html_list
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://www.aliyun.com/activity
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    region_hint: [上海, 杭州, 中国]
+    notes: 平台官方公开活动页。
+  - id: baidu-ai-events
+    name: 百度智能云活动
+    adapter: html_list
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://cloud.baidu.com/event/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    region_hint: [上海, 中国]
+    notes: 平台官方公开活动页。
+  - id: google-ads-think
+    name: Think with Google 中国营销
+    adapter: jsonld
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://www.thinkwithgoogle.com/intl/zh-cn/
+    params: {request_interval_seconds: 2, timeout_seconds: 45}
+    region_hint: [上海, 中国]
+    notes: Google Ads/营销官方内容与活动。
+  - id: meta-china-marketing
+    name: Meta 出海营销
+    adapter: jsonld
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://www.facebook.com/business/events
+    params: {request_interval_seconds: 2, timeout_seconds: 45}
+    region_hint: [上海, 中国, 线上]
+    notes: Meta 官方公开活动页；登录墙则 empty/blocked，不绕过。
+  - id: tiktok-for-business-events
+    name: TikTok for Business 活动
+    adapter: jsonld
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://www.tiktok.com/business/en/events
+    params: {request_interval_seconds: 2, timeout_seconds: 45}
+    region_hint: [上海, 中国, 线上]
+    notes: TikTok for Business 官方公开活动页。
+  - id: baijing
+    name: 白鲸出海活动
+    adapter: html_list
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://www.baijing.cn/activity
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    region_hint: [上海, 杭州, 中国]
+    notes: 行业媒体公开活动页。
+  - id: cifnews-ccee
+    name: 雨果网与 CCEE
+    adapter: html_list
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://www.cifnews.com/activity
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    region_hint: [上海, 杭州, 中国]
+    notes: 跨境电商公开活动页。
+  - id: morketing
+    name: Morketing 与 Morketing Summit
+    adapter: html_list
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://www.morketing.com/events
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    selectors: {item: "article.event-card, li.event-card, [data-event-card]", title: "h2 a, h3 a, a.event-title", date: "time, .event-date", venue: ".event-location, .venue", excerpt: ".event-description, .description", url: "h2 a, h3 a, a.event-title"}
+    empty_reason: 活动栏目未发现可解析的活动卡片；未使用新闻/文章标题作为候选
+    region_hint: [上海, 中国]
+    notes: 只扫描活动/峰会栏目；栏目无活动卡片时记 empty，不回退首页文章。
+  - id: mosu-space
+    name: 模速空间
+    adapter: rendered
+    tier: 1
+    cadence: weekly
+    enabled: true
+    url: https://www.mospace.cn/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, render_wait_ms: 2500}
+    selectors: {item: ".event-card", title: ".title", date: ".date", venue: ".venue", excerpt: ".excerpt", url: ".title"}
+    region_hint: [上海]
+    notes: robots.txt 被 Cloudflare 403 挡住，规则未验证；上海 AI 生态公开活动。
   - id: yibang
     name: 亿邦动力
+    adapter: html_list
     tier: 2
-    url: https://www.ebrun.com/
-    instruction: "查找上海电商、跨境和品牌出海活动。"
-    enabled: true
     cadence: biweekly
-    last_hit: null
+    enabled: true
+    url: https://www.ebrun.com/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    region_hint: [上海, 杭州, 中国]
+    notes: 电商、跨境与品牌出海公开页。
+  - id: amz123
+    name: AMZ123
+    adapter: html_list
+    tier: 2
+    cadence: biweekly
+    enabled: true
+    url: https://www.amz123.com/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    region_hint: [上海, 杭州, 中国]
+    notes: 亚马逊与独立站公开活动信息。
+  - id: brandstar
+    name: 品牌星球
+    adapter: html_list
+    tier: 2
+    cadence: biweekly
+    enabled: true
+    url: https://www.brandstar.com.cn/events
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    selectors: {item: "article.event-card, li.event-card, [data-event-card]", title: "h2 a, h3 a, a.event-title", date: "time, .event-date", venue: ".event-location, .venue", excerpt: ".event-description, .description", url: "h2 a, h3 a, a.event-title"}
+    empty_reason: 活动栏目未发现可解析的活动卡片；未使用新闻/文章标题作为候选
+    region_hint: [上海, 中国]
+    notes: 只扫描活动栏目；栏目无活动卡片时记 empty，不回退首页文章。
+  - id: 36kr-events
+    name: 36氪活动
+    adapter: html_list
+    tier: 2
+    cadence: biweekly
+    enabled: true
+    url: https://36kr.com/information/web_news/latest/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    region_hint: [上海, 杭州, 中国]
+    notes: 创业与科技活动公开信息。
+  - id: xiaguangshe
+    name: 霞光社
+    adapter: html_list
+    tier: 2
+    cadence: biweekly
+    enabled: true
+    url: https://www.xiaguangshe.com/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    region_hint: [上海, 杭州, 中国]
+    notes: 出海行业公开信息。
+  - id: chuhai-students
+    name: 出海同学会
+    adapter: html_list
+    tier: 2
+    cadence: biweekly
+    enabled: true
+    url: https://www.chuhai.com/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, max_candidates: 80}
+    region_hint: [上海, 杭州, 中国]
+    notes: 出海社群公开活动信息。
   - id: meetup-shanghai-ai
     name: Meetup ShanghAI
+    adapter: rendered
     tier: 2
-    url: https://www.meetup.com/
-    instruction: "查找上海 AI 开发者 meetup。"
-    enabled: true
     cadence: biweekly
-    last_hit: null
+    enabled: true
+    url: https://www.meetup.com/shanghai-ai/events/
+    params: {request_interval_seconds: 2, timeout_seconds: 45, render_wait_ms: 2500}
+    selectors: {item: ".event-card", title: ".title", date: ".date", venue: ".venue", excerpt: ".excerpt", url: ".title"}
+    region_hint: [上海]
+    notes: robots.txt 允许普通活动页，仅禁止 API/feed 等路径；v1 源保留。
   - id: eventbrite-shanghai-ai
     name: Eventbrite Shanghai AI
+    adapter: jsonld
     tier: 2
-    url: https://www.eventbrite.com/
-    instruction: "查找上海 AI、开发者和创业活动。"
-    enabled: true
     cadence: biweekly
-    last_hit: null
+    enabled: true
+    url: https://www.eventbrite.com/d/china--shanghai/ai/
+    params: {request_interval_seconds: 2, timeout_seconds: 45}
+    region_hint: [上海]
+    notes: v1 源保留；公开 JSON-LD。
   - id: snec-re
     name: SNEC / RE+ / Intersolar
+    adapter: jsonld
     tier: 2
-    url: https://www.snec.org.cn/
-    instruction: "查找上海光伏、新能源出海相关展会，保留 P2 降权线索。"
-    enabled: true
     cadence: biweekly
-    last_hit: null
+    enabled: true
+    url: https://www.snec.org.cn/
+    params: {request_interval_seconds: 2, timeout_seconds: 45}
+    region_hint: [上海]
+    notes: P2 新能源与光伏出海。
   - id: annual-ai-conferences
     name: WAIC / 外滩大会 / 云栖大会
+    adapter: calendar_seed
     tier: 2
-    url: https://www.waic.com/
-    instruction: "查找年度 AI 大会在上海的官方日期、报名和议程更新。"
-    enabled: true
     cadence: biweekly
-    last_hit: null
+    enabled: true
+    urls: []
+    params: {path: config/annual_calendar.yaml}
+    region_hint: [上海, 杭州]
+    notes: v1 id 保留并复用年度种子；会与 calendar-seed 去重。
+  - id: wechat-search
+    name: 微信文章关键词搜索
+    adapter: wechat_search
+    tier: 2
+    cadence: biweekly
+    enabled: true
+    urls: []
+    params:
+      keywords: [出海活动 上海, 跨境活动 上海, AI 活动 上海, GEO 营销活动, 开发者大会 上海]
+    region_hint: [上海, 杭州, 苏州, 南京]
+    notes: 本机缺 miku_ai 时标 unavailable，不安装、不硬做。
+  - id: llm-sweep
+    name: LLM 联网兜底扫描
+    adapter: llm_sweep
+    tier: 2
+    cadence: weekly
+    enabled: true
+    url: https://www.google.com/search
+    instruction: >-
+      固定查询：上海/杭州/苏州/南京未来120天 出海 跨境 AI 广告 营销 GEO 开发者 独立站 亚马逊
+      活动，以及所有年度种子官网日期核实。优先官方来源；单次 input tokens 上限 300000。
+    region_hint: [上海, 杭州, 苏州, 南京, 宁波, 无锡, 合肥, 嘉兴, 南通]
+    notes: 唯一 Responses web_search 兜底源；不再逐站调用 LLM。

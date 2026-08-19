@@ -1,0 +1,58 @@
+{
+  "events": [
+    {
+      "name": "8.22上海Ai 新商业营销变革精准获客实训",
+      "date_start": "2026-08-22",
+      "date_end": "2026-08-22",
+      "city": "上海",
+      "url": "https://onepilot.xin/events/training",
+      "source": "onepilot",
+      "event_type": "沙龙·meetup",
+      "format": "open",
+      "scale_hint": "unknown",
+      "acquisition_score": 9,
+      "ecosystem_score": 8,
+      "reason": "出海营销实训。公开培训活动。"
+    },
+    {
+      "name": "徐汇滨江AI 出海Drink Chat",
+      "date_start": "2026-08-20",
+      "date_end": "2026-08-20",
+      "city": "上海",
+      "url": "https://onepilot.xin/events/drink-chat",
+      "source": "onepilot",
+      "event_type": "沙龙·meetup",
+      "format": "open",
+      "scale_hint": "unknown",
+      "acquisition_score": 9,
+      "ecosystem_score": 9,
+      "reason": "AI 出海交流。开放小型沙龙。"
+    },
+    {
+      "name": "2026 Google DevFest 上海",
+      "date_start": "2026-11-07",
+      "date_end": "2026-11-07",
+      "city": "上海",
+      "url": "https://gdg.community.dev/gdg-shanghai/",
+      "source": "annual-ai-conferences",
+      "event_type": "开发者大会",
+      "acquisition_score": 6,
+      "ecosystem_score": 9,
+      "reason": "Google 官方开发者生态。"
+    },
+    {
+      "name": "⚡️ 2026 Google Devfest 谷歌开发者节",
+      "date_start": "2026-11-07",
+      "date_end": "2026-11-07",
+      "city": "上海",
+      "venue": "上海徐汇",
+      "organizer": "GDG Shanghai",
+      "url": "https://onepilot.xin/events/devfest",
+      "source": "onepilot",
+      "event_type": "开发者大会",
+      "acquisition_score": 6,
+      "ecosystem_score": 8,
+      "reason": "谷歌开发者与本地社区集中。"
+    }
+  ]
+}

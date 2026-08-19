@@ -1,0 +1,19 @@
+{"chars": 1066, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T04:43:17+00:00"}
+{"chars": 1074, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T05:00:20+00:00"}
+{"chars": 1074, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T05:01:02+00:00"}
+{"chars": 962, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T05:01:02+00:00"}
+{"chars": 1074, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T05:02:29+00:00"}
+{"chars": 1074, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T05:06:55+00:00"}
+{"chars": 1074, "error": "[Weixin] send failed to=o9cq80-D: iLink sendmessage rate limited; cooldown active for 30.0s", "returncode": 1, "status": "failed", "target": "weixin", "timestamp": "2026-08-19T05:07:45+00:00"}
+{"chars": 2380, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T05:18:45+00:00"}
+{"chars": 2359, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T05:26:02+00:00"}
+{"chars": 2359, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T05:27:17+00:00"}
+{"chars": 2359, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T05:27:19+00:00"}
+{"chars": 2520, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T05:46:41+00:00"}
+{"chars": 2500, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T06:00:47+00:00"}
+{"chars": 2196, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T06:14:46+00:00"}
+{"chars": 2130, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T06:16:39+00:00"}
+{"chars": 7021, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T10:31:55+00:00"}
+{"chars": 6152, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T15:43:03+00:00"}
+{"chars": 6152, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T15:44:57+00:00"}
+{"chars": 5778, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T15:45:22+00:00"}
