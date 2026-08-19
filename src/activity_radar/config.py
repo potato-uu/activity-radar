@@ -8,6 +8,15 @@ from typing import Any
 from .io import load_structured
 
 
+def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    raw = os.getenv(name)
+    try:
+        value = int(raw) if raw is not None else default
+    except ValueError:
+        return default
+    return max(minimum, min(value, maximum))
+
+
 @dataclass
 class RadarConfig:
     root: Path
@@ -19,6 +28,9 @@ class RadarConfig:
     push_target: str = "weixin"
     model: str = "gpt-5.5"
     base_url: str = "https://api.openai.com/v1"
+    source_timeout_seconds: int = 180
+    source_retries: int = 2
+    discovery_concurrency: int = 3
 
     @classmethod
     def load(cls, root: Path) -> "RadarConfig":
@@ -34,6 +46,13 @@ class RadarConfig:
             push_target=os.getenv("RADAR_PUSH_TARGET", "weixin"),
             model=os.getenv("RADAR_MODEL", "gpt-5.5"),
             base_url=os.getenv("CODEX_BASE_URL", os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/"),
+            source_timeout_seconds=_env_int(
+                "RADAR_SOURCE_TIMEOUT_SECONDS", 180, minimum=30, maximum=900
+            ),
+            source_retries=_env_int("RADAR_SOURCE_RETRIES", 2, minimum=1, maximum=3),
+            discovery_concurrency=_env_int(
+                "RADAR_DISCOVERY_CONCURRENCY", 3, minimum=1, maximum=6
+            ),
         )
 
     @property

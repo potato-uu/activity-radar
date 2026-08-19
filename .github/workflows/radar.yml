@@ -19,6 +19,9 @@ jobs:
       CODEX_BASE_URL: ${{ vars.CODEX_BASE_URL }}
       RADAR_MODEL: ${{ vars.RADAR_MODEL || 'gpt-5.5' }}
       RADAR_PUSH_TARGET: weixin
+      RADAR_SOURCE_TIMEOUT_SECONDS: "180"
+      RADAR_SOURCE_RETRIES: "2"
+      RADAR_DISCOVERY_CONCURRENCY: "3"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -6,3 +6,5 @@ __pycache__/
 dist/
 build/
 data/push-latest.txt
+.playwright-mcp/
+大正咖啡集团-*/

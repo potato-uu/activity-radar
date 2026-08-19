@@ -51,6 +51,10 @@ PYTHONPATH=src python -m activity_radar.cli backtest \
 - `logs/run.jsonl`：逐源调用、错误、usage 和成本字段；未配置单价时会明确记录 `api_cost_status=logged_unknown`，不会伪造金额。
 - `site/index.html`：单文件静态时间轴，支持 Tier、类型、获客线/资源线筛选。
 
+来源研究使用有界并行，单个来源超时不会阻塞其他来源。可通过环境变量调整：
+`RADAR_SOURCE_TIMEOUT_SECONDS`（默认 180）、`RADAR_SOURCE_RETRIES`（默认 2）、`RADAR_DISCOVERY_CONCURRENCY`（默认 3）。
+`source-health.json` 的 `last_result` 区分 `hit`、`empty` 和 `timeout/error`；`last_error` 仅表示最近一次历史错误时间，不代表当前运行仍失败。
+
 ```bash
 PYTHONPATH=src pytest -q
 python3 -m compileall -q src
