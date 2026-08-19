@@ -31,6 +31,7 @@ def update_source_health(config: RadarConfig, research_stats: dict[str, object])
     health = read_json(config.source_health_path, {})
     hits = set(research_stats.get("source_hits", []))
     errors = set(research_stats.get("source_errors", []))
+    error_details = dict(research_stats.get("source_error_details", {}))
     stale: list[str] = []
     for source in config.sources:
         source_id = source["id"]
@@ -39,8 +40,15 @@ def update_source_health(config: RadarConfig, research_stats: dict[str, object])
         if source_id in hits:
             row["last_hit"] = row["last_scanned"]
             row["no_hit_runs"] = 0
+            row["last_result"] = "hit"
+            row.pop("last_error_kind", None)
+        elif source_id in errors:
+            row["last_result"] = error_details.get(source_id, "error")
+            row["last_error_kind"] = row["last_result"]
         else:
             row["no_hit_runs"] = int(row.get("no_hit_runs", 0)) + 1
+            row["last_result"] = "empty"
+            row.pop("last_error_kind", None)
         if source_id in errors:
             row["last_error"] = row["last_scanned"]
         if row["no_hit_runs"] >= 4:

@@ -2,106 +2,121 @@
   "amz123": {
     "last_error": "2026-08-16T10:32:47+00:00",
     "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_result": "empty",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 3,
     "status": "active"
   },
   "annual-ai-conferences": {
     "last_error": "2026-08-16T10:32:47+00:00",
-    "last_hit": "2026-08-16T11:23:38+00:00",
-    "last_scanned": "2026-08-16T11:23:38+00:00",
+    "last_hit": "2026-08-17T03:19:20+00:00",
+    "last_result": "hit",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
     "no_hit_runs": 0,
     "status": "active"
   },
   "baijing": {
     "last_error": "2026-08-16T10:32:47+00:00",
     "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_result": "empty",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 3,
     "status": "active"
   },
   "cifnews-ccee": {
     "last_error": "2026-08-16T11:23:38+00:00",
     "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_result": "empty",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 3,
     "status": "active"
   },
   "eventbrite-shanghai-ai": {
     "last_error": "2026-08-16T11:23:38+00:00",
-    "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_hit": "2026-08-17T03:19:20+00:00",
+    "last_result": "hit",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 0,
     "status": "active"
   },
   "google-developers-cn": {
     "last_error": "2026-08-16T10:32:47+00:00",
     "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_result": "empty",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 3,
     "status": "active"
   },
   "huodongxing": {
     "last_error": "2026-08-16T11:23:38+00:00",
-    "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_hit": "2026-08-17T03:19:20+00:00",
+    "last_result": "hit",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 0,
     "status": "active"
   },
   "jufair": {
     "last_error": "2026-08-16T11:23:38+00:00",
-    "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_hit": "2026-08-17T03:19:20+00:00",
+    "last_result": "hit",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 0,
     "status": "active"
   },
   "luma-shanghai-ai": {
     "last_error": "2026-08-16T11:23:38+00:00",
     "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_result": "empty",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 3,
     "status": "active"
   },
   "meetup-shanghai-ai": {
     "last_error": "2026-08-16T11:23:38+00:00",
-    "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_hit": "2026-08-17T03:19:20+00:00",
+    "last_result": "hit",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 0,
     "status": "active"
   },
   "morketing": {
     "last_error": "2026-08-16T10:32:47+00:00",
     "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_result": "empty",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 3,
     "status": "active"
   },
   "mosu-space": {
     "last_error": "2026-08-16T10:32:47+00:00",
-    "last_hit": "2026-08-16T11:23:38+00:00",
-    "last_scanned": "2026-08-16T11:23:38+00:00",
+    "last_hit": "2026-08-17T03:19:20+00:00",
+    "last_result": "hit",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
     "no_hit_runs": 0,
     "status": "active"
   },
   "openai-news-events": {
     "last_error": "2026-08-16T10:32:47+00:00",
     "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_result": "empty",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 3,
     "status": "active"
   },
   "snec-re": {
     "last_error": "2026-08-16T10:32:47+00:00",
     "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_result": "empty",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 3,
     "status": "active"
   },
   "yibang": {
     "last_error": "2026-08-16T10:32:47+00:00",
     "last_hit": null,
-    "last_scanned": "2026-08-16T11:23:38+00:00",
-    "no_hit_runs": 2,
+    "last_result": "empty",
+    "last_scanned": "2026-08-17T03:19:20+00:00",
+    "no_hit_runs": 3,
     "status": "active"
   }
 }

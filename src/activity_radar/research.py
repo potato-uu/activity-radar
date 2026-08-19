@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,38 @@ def _log(config: RadarConfig, payload: dict[str, Any]) -> None:
     append_jsonl(config.logs_path, {"timestamp": now_iso(), **payload})
 
 
+def _error_kind(exc: Exception) -> str:
+    message = str(exc).lower()
+    if "timed out" in message or "timeout" in message:
+        return "timeout"
+    if "authentication failed" in message or "no codex_api_key" in message:
+        return "authentication"
+    return "error"
+
+
+def _discover_source(
+    config: RadarConfig, source: dict[str, Any], today: date
+) -> tuple[list[dict[str, Any]], Usage, str | None, str | None]:
+    """Run one source in isolation so a slow source cannot block its peers."""
+    client = OpenAIResponsesClient(
+        config.base_url,
+        config.model,
+        config.root,
+        timeout=config.source_timeout_seconds,
+    )
+    try:
+        text, usage = client.request(
+            discover_prompt(source, today, config.city_scope),
+            retries=config.source_retries,
+        )
+        rows = parse_json_text(text)
+        if not isinstance(rows, list):
+            raise ProviderError(f"Source {source['id']} did not return a JSON array")
+        return rows, usage, None, None
+    except Exception as exc:
+        return [], Usage(), _error_kind(exc), str(exc)
+
+
 def discover_and_score(config: RadarConfig, *, fixture: Path | None = None, live: bool = False) -> tuple[list[Event], dict[str, Any]]:
     now = now_iso()
     if fixture is not None:
@@ -60,34 +93,51 @@ def discover_and_score(config: RadarConfig, *, fixture: Path | None = None, live
         return events, {"source_count": 1, "candidate_count": len(events), "api_cost": 0, "source_hits": hit_sources, "source_errors": []}
     if not live:
         raise ProviderError("Live research is disabled. Pass --live or provide --fixture.")
-    client = OpenAIResponsesClient(config.base_url, config.model, config.root)
     discovered: list[dict[str, Any]] = []
     source_count = 0
     source_hits: list[str] = []
     source_errors: list[str] = []
+    source_error_details: dict[str, str] = {}
     total_cost = 0.0
-    for source in config.sources:
-        if not source.get("enabled", True):
-            continue
-        source_count += 1
-        try:
-            text, usage = client.request(discover_prompt(source, date.today(), config.city_scope))
-            rows = parse_json_text(text)
-            if not isinstance(rows, list):
-                raise ProviderError(f"Source {source['id']} did not return a JSON array")
+    enabled_sources = [source for source in config.sources if source.get("enabled", True)]
+    source_count = len(enabled_sources)
+    max_workers = min(config.discovery_concurrency, max(1, source_count))
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="radar-source") as pool:
+        futures = {
+            source["id"]: pool.submit(_discover_source, config, source, date.today())
+            for source in enabled_sources
+        }
+        for source in enabled_sources:
+            rows, usage, error_kind, error_message = futures[source["id"]].result()
+            if error_message:
+                source_errors.append(source["id"])
+                source_error_details[source["id"]] = error_kind or "error"
+                _log(
+                    config,
+                    {
+                        "kind": "discover_error",
+                        "source": source["id"],
+                        "error_kind": error_kind or "error",
+                        "error": error_message,
+                    },
+                )
+                if error_kind == "authentication":
+                    raise ProviderError(error_message)
+                continue
             discovered.extend(rows)
             if rows:
                 source_hits.append(source["id"])
             if usage.cost_usd is not None:
                 total_cost += usage.cost_usd
             _log(config, {"kind": "discover", "source": source["id"], "candidate_count": len(rows), "usage": usage.to_dict(), "api_cost": usage.cost_usd})
-        except Exception as exc:
-            source_errors.append(source["id"])
-            _log(config, {"kind": "discover_error", "source": source["id"], "error": str(exc)})
-            if "authentication failed" in str(exc).lower():
-                raise
     scored: list[dict[str, Any]] = []
     if discovered:
+        client = OpenAIResponsesClient(
+            config.base_url,
+            config.model,
+            config.root,
+            timeout=config.source_timeout_seconds,
+        )
         text, usage = client.request(score_prompt(discovered, config.scoring), web_search=False)
         value = parse_json_text(text)
         if not isinstance(value, list):
@@ -98,4 +148,11 @@ def discover_and_score(config: RadarConfig, *, fixture: Path | None = None, live
         _log(config, {"kind": "score", "candidate_count": len(scored), "usage": usage.to_dict(), "api_cost": usage.cost_usd})
     events = [prepare_event(item, item.get("source", "unknown"), now, config.scoring) for item in scored]
     _log(config, {"kind": "run_summary", "source_count": source_count, "candidate_count": len(events), "api_cost": total_cost if total_cost else None, "api_cost_status": "logged_unknown" if total_cost == 0 else "logged"})
-    return events, {"source_count": source_count, "candidate_count": len(events), "api_cost": total_cost or None, "source_hits": source_hits, "source_errors": source_errors}
+    return events, {
+        "source_count": source_count,
+        "candidate_count": len(events),
+        "api_cost": total_cost or None,
+        "source_hits": source_hits,
+        "source_errors": source_errors,
+        "source_error_details": source_error_details,
+    }

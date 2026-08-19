@@ -31,3 +31,20 @@
 {"api_cost": null, "candidate_count": 1, "kind": "discover", "source": "annual-ai-conferences", "timestamp": "2026-08-16T11:23:00+00:00", "usage": {"cost_usd": null, "input_tokens": 48577, "output_tokens": 3475}}
 {"api_cost": null, "candidate_count": 2, "kind": "score", "timestamp": "2026-08-16T11:23:38+00:00", "usage": {"cost_usd": null, "input_tokens": 5017, "output_tokens": 1994}}
 {"api_cost": null, "api_cost_status": "logged_unknown", "candidate_count": 2, "kind": "run_summary", "source_count": 15, "timestamp": "2026-08-16T11:23:38+00:00"}
+{"api_cost": null, "candidate_count": 1, "kind": "discover", "source": "huodongxing", "timestamp": "2026-08-17T03:17:21+00:00", "usage": {"cost_usd": null, "input_tokens": 93008, "output_tokens": 2391}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "luma-shanghai-ai", "timestamp": "2026-08-17T03:17:21+00:00", "usage": {"cost_usd": null, "input_tokens": 26099, "output_tokens": 510}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "baijing", "timestamp": "2026-08-17T03:17:21+00:00", "usage": {"cost_usd": null, "input_tokens": 45110, "output_tokens": 826}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "cifnews-ccee", "timestamp": "2026-08-17T03:17:21+00:00", "usage": {"cost_usd": null, "input_tokens": 33679, "output_tokens": 565}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "morketing", "timestamp": "2026-08-17T03:17:21+00:00", "usage": {"cost_usd": null, "input_tokens": 33841, "output_tokens": 486}}
+{"api_cost": null, "candidate_count": 1, "kind": "discover", "source": "mosu-space", "timestamp": "2026-08-17T03:17:21+00:00", "usage": {"cost_usd": null, "input_tokens": 31754, "output_tokens": 1106}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "google-developers-cn", "timestamp": "2026-08-17T03:17:21+00:00", "usage": {"cost_usd": null, "input_tokens": 35808, "output_tokens": 541}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "openai-news-events", "timestamp": "2026-08-17T03:17:21+00:00", "usage": {"cost_usd": null, "input_tokens": 25282, "output_tokens": 253}}
+{"api_cost": null, "candidate_count": 1, "kind": "discover", "source": "jufair", "timestamp": "2026-08-17T03:17:29+00:00", "usage": {"cost_usd": null, "input_tokens": 33077, "output_tokens": 826}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "amz123", "timestamp": "2026-08-17T03:17:29+00:00", "usage": {"cost_usd": null, "input_tokens": 45179, "output_tokens": 632}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "yibang", "timestamp": "2026-08-17T03:17:45+00:00", "usage": {"cost_usd": null, "input_tokens": 33880, "output_tokens": 618}}
+{"api_cost": null, "candidate_count": 4, "kind": "discover", "source": "meetup-shanghai-ai", "timestamp": "2026-08-17T03:18:03+00:00", "usage": {"cost_usd": null, "input_tokens": 39302, "output_tokens": 1541}}
+{"api_cost": null, "candidate_count": 2, "kind": "discover", "source": "eventbrite-shanghai-ai", "timestamp": "2026-08-17T03:18:13+00:00", "usage": {"cost_usd": null, "input_tokens": 50790, "output_tokens": 1799}}
+{"api_cost": null, "candidate_count": 0, "kind": "discover", "source": "snec-re", "timestamp": "2026-08-17T03:18:13+00:00", "usage": {"cost_usd": null, "input_tokens": 34002, "output_tokens": 531}}
+{"api_cost": null, "candidate_count": 1, "kind": "discover", "source": "annual-ai-conferences", "timestamp": "2026-08-17T03:18:26+00:00", "usage": {"cost_usd": null, "input_tokens": 27149, "output_tokens": 796}}
+{"api_cost": null, "candidate_count": 8, "kind": "score", "timestamp": "2026-08-17T03:19:20+00:00", "usage": {"cost_usd": null, "input_tokens": 6235, "output_tokens": 2746}}
+{"api_cost": null, "api_cost_status": "logged_unknown", "candidate_count": 8, "kind": "run_summary", "source_count": 15, "timestamp": "2026-08-17T03:19:20+00:00"}

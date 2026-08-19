@@ -55,7 +55,7 @@ def load_codex_auth_key() -> str | None:
 
 
 class OpenAIResponsesClient:
-    def __init__(self, base_url: str, model: str, root: Path, timeout: int = 90) -> None:
+    def __init__(self, base_url: str, model: str, root: Path, timeout: int = 180) -> None:
         load_local_env(root)
         self.api_key = os.getenv("CODEX_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("LM_API_KEY") or load_codex_auth_key()
         self.base_url = base_url.rstrip("/")
