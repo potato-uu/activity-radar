@@ -12,7 +12,7 @@ from activity_radar.cli import main, update_source_health
 from activity_radar.config import RadarConfig
 from activity_radar.io import read_json, read_jsonl
 from activity_radar.provider import Usage
-from activity_radar.push import auto_mode, build_push_for_config, has_successful_auto_run, record_auto_success, send_via_hermes
+from activity_radar.push import auto_mode, build_push_for_config, has_successful_auto_run, record_auto_success, send_via_hermes, split_message
 from activity_radar.render import render_timeline
 from activity_radar.research import _score_and_prepare, _score_candidates_in_batches
 from activity_radar.rules import is_valid_candidate, make_id, merge_events, prefilter_candidates, prepare_event
@@ -201,16 +201,143 @@ def test_push_expected_month_health_and_side_event_filters(tmp_path):
     root = isolated_root(tmp_path)
     config = RadarConfig.load(root)
     (root / "data/source-health.json").write_text(json.dumps({
-        "new-source": {"no_hit_runs": 1, "scan_count": 1, "last_result": "empty"},
-        "stale-source": {"no_hit_runs": 3, "scan_count": 3, "last_result": "empty"},
+        "new-source": {"first_scanned": "2026-08-10T00:00:00+00:00", "last_result": "empty"},
+        "stale-source": {"first_scanned": "2026-08-01T00:00:00+00:00", "last_result": "empty"},
     }), encoding="utf-8")
     expected = Event(id="expected", name="Expected Summit", date_start="2026-09-01", date_end="2026-09-01", date_precision="month", city="上海", status="expected", tier="A", acquisition_score=8, ecosystem_score=8, reason="reason", url="https://expected.example")
     one_day_b = Event(id="b", name="One Day B", date_start="2026-08-20", date_end="2026-08-20", city="上海", status="active", tier="B", acquisition_score=6, ecosystem_score=6, reason="reason", url="https://b.example", side_event_opportunity=True)
     message = build_push_for_config([expected, one_day_b], config, today=date(2026, 8, 18))
     assert "2026年9月（日期待官宣）" in message
     assert "One Day B" not in message.split("4. side event 机会", 1)[1]
-    assert "新源尚无命中：new-source" in message
+    assert "新源观察中：2 个" in message
     assert "stale-source" not in message
+
+
+def test_p1_full_push_limits_detailed_new_events_and_compacts_schedule(tmp_path):
+    config = RadarConfig.load(isolated_root(tmp_path))
+    events = [
+        Event(
+            id=f"a-{index}",
+            name=f"New Event {index}",
+            date_start=f"2026-08-{20 + index % 5:02d}",
+            date_end=f"2026-08-{20 + index % 5:02d}",
+            city="上海",
+            event_type="峰会",
+            tier="A",
+            acquisition_score=8,
+            ecosystem_score=8,
+            reason="理由一。理由二。理由三。",
+            url=f"https://example.com/a/{index}",
+            first_seen="2026-08-18T12:00:00+00:00",
+        )
+        for index in range(14)
+    ]
+    events.extend([
+        Event(id=f"c-{index}", name=f"C Event {index}", date_start="2026-08-25", city="上海", tier="C", acquisition_score=5, ecosystem_score=5, reason="C。", url=f"https://example.com/c/{index}", first_seen="2026-08-18T12:00:00+00:00")
+        for index in range(2)
+    ])
+    message = build_push_for_config(events, config, today=date(2026, 8, 19), mode="full")
+    new_section = message.split("1. 本周新发现\n", 1)[1].split("\n\n2. 未来 4 周", 1)[0]
+    schedule = message.split("2. 未来 4 周 Tier A/B\n", 1)[1].split("\n\n3. 报名", 1)[0]
+    assert new_section.count("理由：") == 12
+    assert "另有 2 条新发现见网页" in new_section
+    assert "另有 C 级 2 条，见网页" in new_section
+    assert "理由一" not in schedule
+    assert "峰会·上海·公开" in schedule
+
+
+def test_p2_side_event_only_uses_qualified_tier_a_and_caps_related_items(tmp_path):
+    config = RadarConfig.load(isolated_root(tmp_path))
+    qualified = Event(id="qualified", name="Qualified A Summit", date_start="2026-09-01", date_end="2026-09-03", city="上海", tier="A", acquisition_score=8, ecosystem_score=8, reason="A。B。", url="https://example.com/q", side_event_opportunity=True)
+    one_day = Event(id="one-day", name="One Day A", date_start="2026-09-01", date_end="2026-09-01", city="上海", tier="A", acquisition_score=8, ecosystem_score=8, reason="A。B。", url="https://example.com/o", side_event_opportunity=True)
+    tier_b = Event(id="tier-b", name="Tier B Conference", date_start="2026-09-01", date_end="2026-09-03", city="上海", tier="B", acquisition_score=7, ecosystem_score=7, reason="A。B。", url="https://example.com/b", side_event_opportunity=True)
+    related = [Event(id=f"r-{index}", name=f"Related {index}", date_start="2026-09-02", city="上海", tier="B", acquisition_score=6, ecosystem_score=6, reason="A。B。", url=f"https://example.com/r/{index}", related_to="qualified") for index in range(7)]
+    message = build_push_for_config([qualified, one_day, tier_b, *related], config, today=date(2026, 8, 19), mode="full")
+    side = message.split("4. side event 机会\n", 1)[1].split("\n\n5.", 1)[0]
+    assert "Qualified A Summit" in side
+    assert "One Day A" not in side and "Tier B Conference" not in side
+    assert "Related 4" in side and "Related 5" not in side
+    assert "等 2 个" in side
+
+
+def test_p3_source_health_uses_28_day_dates_and_deduplicates_errors(tmp_path):
+    root = isolated_root(tmp_path)
+    config = RadarConfig.load(root)
+    (root / "data/source-health.json").write_text(json.dumps({
+        "old-empty": {"first_scanned": "2026-07-01T00:00:00+00:00", "last_hit": None, "last_result": "empty"},
+        "recent-hit": {"first_scanned": "2026-07-01T00:00:00+00:00", "last_hit": "2026-08-10T00:00:00+00:00", "last_result": "empty"},
+        "new-empty": {"first_scanned": "2026-08-10T00:00:00+00:00", "last_hit": None, "last_result": "empty"},
+        "broken": {"first_scanned": "2026-07-01T00:00:00+00:00", "last_hit": None, "last_result": "error"},
+        "timed-out": {"first_scanned": "2026-08-10T00:00:00+00:00", "last_hit": None, "last_result": "timeout"},
+    }), encoding="utf-8")
+    message = build_push_for_config([], config, today=date(2026, 8, 19), mode="full")
+    health = message.split("5. 源健康度：", 1)[1].split("\n\n完整时间轴", 1)[0]
+    assert "连续 4 周无 hit：old-empty" in health
+    assert "recent-hit" not in health
+    assert "新源观察中：1 个" in health
+    assert health.count("broken") == 1
+    assert "unavailable/异常：broken" in health
+    assert "timed-out" not in health
+
+
+def test_p4_hermes_send_splits_at_1800_chars_and_waits_between_chunks(tmp_path, monkeypatch):
+    sent: list[str] = []
+    waits: list[int] = []
+    monkeypatch.setattr("activity_radar.push.shutil.which", lambda _name: "/fake/hermes")
+
+    def fake_run(*_args, **kwargs):
+        sent.append(kwargs["input"])
+        return type("Result", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    monkeypatch.setattr("activity_radar.push.subprocess.run", fake_run)
+    message = "\n\n".join(f"段落 {index}\n" + "x" * 900 for index in range(5))
+    assert all(len(chunk) <= 1800 for chunk in split_message(message))
+    result = send_via_hermes(message, "weixin", dry_run=False, log_path=tmp_path / "logs/push.jsonl", sleep_fn=waits.append)
+    assert sent == split_message(message)
+    assert all(chunk.startswith(f"（{index}/{len(sent)}）") for index, chunk in enumerate(sent, 1))
+    assert waits == [35] * (len(sent) - 1)
+    assert result["chunks"] == len(sent)
+
+
+def test_p4_hermes_stops_on_failed_chunk_and_logs_its_number(tmp_path, monkeypatch):
+    calls = 0
+    monkeypatch.setattr("activity_radar.push.shutil.which", lambda _name: "/fake/hermes")
+
+    def fake_run(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        code = 1 if calls == 2 else 0
+        return type("Result", (), {"returncode": code, "stdout": "", "stderr": "cooldown"})()
+
+    monkeypatch.setattr("activity_radar.push.subprocess.run", fake_run)
+    log = tmp_path / "logs/push.jsonl"
+    with pytest.raises(RuntimeError, match="chunk 2/"):
+        send_via_hermes("A" * 1700 + "\n\n" + "B" * 1700 + "\n\n" + "C" * 1700, "weixin", dry_run=False, log_path=log, sleep_fn=lambda _seconds: None)
+    assert calls == 2
+    assert read_jsonl(log)[0]["chunk"] == 2
+
+
+def test_p5_new_discoveries_use_previous_full_or_seven_day_fallback(tmp_path):
+    root = isolated_root(tmp_path)
+    config = RadarConfig.load(root)
+    old = Event(id="old", name="Old Event", date_start="2026-08-25", city="上海", tier="A", acquisition_score=8, ecosystem_score=8, reason="A。B。", url="https://example.com/old", first_seen="2026-08-11T12:00:00+00:00")
+    recent = Event(id="recent", name="Recent Event", date_start="2026-08-25", city="上海", tier="A", acquisition_score=8, ecosystem_score=8, reason="A。B。", url="https://example.com/recent", first_seen="2026-08-18T12:00:00+00:00")
+    no_history = build_push_for_config([old, recent], config, today=date(2026, 8, 19), mode="full")
+    first_section = no_history.split("1. 本周新发现\n", 1)[1].split("\n\n2.", 1)[0]
+    assert "Old Event" not in first_section and "Recent Event" in first_section
+    history = root / "data/push-history"
+    history.mkdir()
+    (history / "20260818T130000Z-full.txt").write_text("sample", encoding="utf-8")
+    after_history = Event(id="after", name="After Full", date_start="2026-08-25", city="上海", tier="A", acquisition_score=8, ecosystem_score=8, reason="A。B。", url="https://example.com/after", first_seen="2026-08-18T14:00:00+00:00")
+    with_history = build_push_for_config([recent, after_history], config, today=date(2026, 8, 19), mode="full")
+    first_section = with_history.split("1. 本周新发现\n", 1)[1].split("\n\n2.", 1)[0]
+    assert "Recent Event" not in first_section and "After Full" in first_section
+
+
+def test_p6_push_ends_with_timeline_link(tmp_path):
+    config = RadarConfig.load(isolated_root(tmp_path))
+    message = build_push_for_config([], config, today=date(2026, 8, 19), mode="delta")
+    assert message.endswith("完整时间轴：https://potato-uu.github.io/activity-radar/")
 
 
 def test_auto_mode_uses_shanghai_hours_and_is_idempotent(tmp_path):

@@ -344,7 +344,7 @@ def _collapse_seed_matches(events: Iterable[Event]) -> list[Event]:
 
 
 def _scale_at_least(value: str, minimum: int) -> bool:
-    return any(int(number) >= minimum for number in re.findall(r"\d+", value or ""))
+    return any(int(number.replace(",", "")) >= minimum for number in re.findall(r"\d[\d,]*", value or ""))
 
 
 def apply_side_event_links(events: Iterable[Event]) -> list[Event]:
@@ -356,7 +356,7 @@ def apply_side_event_links(events: Iterable[Event]) -> list[Event]:
         start, end = parse_iso(event.date_start), parse_iso(event.date_end)
         multi_day = bool(start and end and end > start and not event.is_series)
         platform_official = bool(event.metadata.get("platform_official"))
-        eligible_tier = event.tier == "A" or (event.tier == "B" and multi_day)
+        eligible_tier = event.tier == "A"
         if eligible_tier and (multi_day or platform_official or _scale_at_least(event.scale_hint, 1000)):
             event.side_event_opportunity = True
             conferences.append(event)

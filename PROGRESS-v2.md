@@ -305,3 +305,55 @@ PYTHONPATH=src .venv/bin/python -m activity_radar.cli push --mode delta
 - `PROGRESS-v2.md`
 
 建议提交信息：`fix: close activity radar v2 data quality gaps`
+
+## 推送格式轮 Report
+
+时间：2026-08-19 09:29 PDT（仅执行 BRIEF §12 P1–P6；未联网、未启动 Chromium、未外发、未执行 git 写操作）
+
+### 执行记录
+
+- 执行期间先读取 §12、§2、§8 和现有推送/side event/源健康实现；先运行定向测试，再按失败证据收口格式。
+- 随后完成 P1–P6 与独立回归；全套增至 75 项并保持全绿。
+- 09:21–09:26：用现有 `data/events.jsonl` 生成最终 dry-run full/delta；中间不达标样张已删除，只保留最终两份。
+
+### P1–P6
+
+| 项 | 状态 | 实现与证据 |
+|---|---|---|
+| P1 去重与压缩 | Passed | full 第 1 段只对本窗口 A/B 展示最多 12 条详情和最多两句理由；超量与 C 级改为汇总行。未来 4 周、截止提醒均改为单行日程，不再重复理由。回归覆盖 14 条 A + 2 条 C 的上限、汇总和日程无理由。 |
+| P2 side event 收紧 | Passed | `rules.apply_side_event_links()` 只允许 Tier A 且多日/平台官方/规模 ≥1000 的大会开启机会，B 级即使多日且官方也会清空机会和关联；推送对旧数据再次 fail-closed，只展示合格大会，每场最多 5 个周边局，余量显示“等 N 个”。 |
+| P3 源健康按周 | Passed | 新增并持久化 `first_scanned`；连续无 hit 改为 `first_scanned` 距今 ≥28 天且 `last_hit` 为空或距今 ≥28 天。未满 28 天的空源只汇总数量；异常只列 `error/blocked/unavailable`，同一源不会重复出现。旧健康文件无 `first_scanned` 时保守回退 `last_scanned`。 |
+| P4 微信分段发送 | Passed（mock） | `split_message()` 按段落/条目边界生成带 `（i/N）` 前缀且实际长度 ≤1800 的块；`send_via_hermes()` 逐块发送，块间调用 35 秒等待，失败立即停止并记录 `chunk/chunk_count`。成功、冷却等待、第二块失败均只用 fake/mocked subprocess 测试，没有调用真实 Hermes。 |
+| P5 首周特例 | Passed | 新发现窗口优先读取最近 full 历史样张时间；`first_seen` 早于该时间不再算新。没有 full 历史时只取最近 7 天。回归同时覆盖有/无历史两条路径。当前 full 因已有同日 full 记录，第 1 段正确显示“无”。 |
+| P6 网页链接 | Passed | full/delta 末尾均为 `完整时间轴：https://potato-uu.github.io/activity-radar/`，样张末尾断言通过。 |
+
+### 最终样张
+
+- full：`data/push-history/20260819T162156Z-full.txt`，`wc -m` = **1269 字**，目标 `<=4000` Passed。
+- delta：`data/push-history/20260819T162644Z-delta.txt`，`wc -m` = **978 字**，目标 `<=2000` Passed。
+- `data/push-latest.txt` 为最后一次生成的 delta；两次 CLI 结果均为 `status=dry_run`、`chunks=1`，没有使用 `--send`。
+- delta 按 §3.5 只保留“新增/变更/取消 + 7 天内截止 + 网页链接”，移除了旧实现重复的未来 4 周和源健康段。
+
+### 验证
+
+| 检查 | 状态 | 证据 |
+|---|---|---|
+| P1–P6 最小单测 | Passed | `tests/test_repairs.py` 为 P1–P6 各有独立测试；P4 另覆盖失败块日志。 |
+| 全套单测 | Passed | `PYTHONPATH=src .venv/bin/python -m pytest --override-ini addopts= -q -rA` -> `75 passed in 0.76s`。 |
+| 编译 | Passed | `.venv/bin/python -m compileall -q src tests`，退出码 0。 |
+| 空白检查 | Passed | `git diff --check`，退出码 0。 |
+| 样张字数/链接 | Passed | full 1269、delta 978；两份文件末尾链接断言均为 true。 |
+
+### 产出与应提交文件
+
+- 代码：`src/activity_radar/push.py`、`src/activity_radar/rules.py`、`src/activity_radar/cli.py`。
+- 测试：`tests/test_repairs.py`、`tests/test_rules.py`。
+- dry-run 产物：`data/push-history/20260819T162156Z-full.txt`、`data/push-history/20260819T162644Z-delta.txt`、`data/push-latest.txt`、`logs/push.jsonl`。
+- 进度：`PROGRESS-v2.md`。
+- 建议提交信息：`fix: compress activity radar push delivery`。
+
+### Blocked / Deviations
+
+- 无阻塞项。按本轮明确禁区未抓网页、未联网、未启动 Chromium、未真实发送 Hermes、未读取或打印密钥。
+- 未执行 `git add/commit/rebase/checkout/push`；只运行了 `git status`、`git diff`、`git diff --check` 等只读检查。
+- `data/events.jsonl` 未重写；P2 对现有旧关联由推送层即时过滤，下一次正常 merge 会按新规则重算并清空不合格的 B 级大会关联。

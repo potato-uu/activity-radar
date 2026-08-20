@@ -17,3 +17,7 @@
 {"chars": 6152, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T15:43:03+00:00"}
 {"chars": 6152, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T15:44:57+00:00"}
 {"chars": 5778, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T15:45:22+00:00"}
+{"chars": 1269, "chunks": 1, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T16:21:56+00:00"}
+{"chars": 978, "chunks": 1, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T16:26:44+00:00"}
+{"chars": 1938, "chunks": 2, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T17:47:44+00:00"}
+{"chars": 1444, "chunks": 1, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-20T01:15:31+00:00"}

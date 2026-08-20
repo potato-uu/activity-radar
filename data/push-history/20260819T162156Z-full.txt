@@ -1,0 +1,31 @@
+上海 BD 活动雷达
+模式：full
+
+1. 本周新发现
+- 无
+
+2. 未来 4 周 Tier A/B
+- 2026-08-19｜2026 虹桥跨境供应链生态发展论坛｜Tier B｜获客 6.3 / 资源 5.2｜峰会·上海·公开
+- 2026-08-20｜8.20 AI出海获客沙龙-陆家嘴出海局｜Tier B｜获客 7 / 资源 4｜沙龙·上海·公开
+- 2026-08-20｜徐汇滨江AI 出海Drink Chat｜Tier B｜获客 7 / 资源 3｜沙龙·上海·公开
+- 2026-08-21｜AIOps & Data Day 可观测性与 AI Agent 闭门交流会｜Tier A｜获客 1 / 资源 8｜展会·上海·闭门
+- 2026-08-21｜Markethon 2026 卖客松：没有假信号的销售黑客松｜Tier B｜获客 6 / 资源 4｜开发者大会·上海·公开
+- 2026-08-21｜TRAE AI 创造力大赛｜Tier B｜获客 1 / 资源 7｜展会·上海·公开
+- 2026-08-23｜AI内容增长酒会—自媒体·出海·获客｜Tier B｜获客 6.5 / 资源 2｜沙龙·上海·闭门
+- 2026-08-28｜AI出海闭门沙龙！共话中国AI出海新格局｜Tier B｜获客 6 / 资源 3｜展会·上海·闭门
+- 2026-09-01｜9/1 知外×领英×融创云，共探AI出海局｜Tier A｜获客 9 / 资源 6｜展会·上海·公开
+- 2026年9月（日期待官宣）｜CCEE 雨果跨境电商选品大会｜Tier A｜获客 8 / 资源 5｜峰会·上海·公开
+- 2026-09-05｜AICD - Shanghai｜Tier B｜获客 2 / 资源 7｜峰会·上海·公开
+- 2026-09-05｜微信开发者创新工坊｜上海站：与 AI 共生小程序开发者交流｜Tier B｜获客 1 / 资源 6｜沙龙·上海·公开
+- 2026-09-09｜Inclusion·外滩大会｜Tier B｜获客 3.4 / 资源 6.1｜峰会·上海·公开
+
+3. 报名/购票截止 <= 7 天
+- 无
+
+4. side event 机会
+- 2026 云栖大会（2026-09-22）：周边局待发现
+- 第九届中国国际进口博览会（2026-11-05）：⚡️ 2026 Google Devfest 谷歌开发者节
+
+5. 源健康度：连续 4 周无 hit：无；新源观察中：15 个；unavailable/异常：baidu-ai-events, brandstar, hdb, meta-china-marketing, microsoft-reactor-shanghai, morketing, openai-news-events, tiktok-for-business-events, wechat-search
+
+完整时间轴：https://potato-uu.github.io/activity-radar/

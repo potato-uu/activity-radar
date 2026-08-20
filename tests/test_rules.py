@@ -111,10 +111,12 @@ def test_side_event_opportunity_and_related_event_are_linked():
     assert linked[1].related_to == linked[0].id
 
 
-def test_one_day_tier_b_is_not_a_side_event_conference():
-    conference = event("One Day B", "2026-09-10", tier="B", event_type="峰会", side_event_opportunity=True, metadata={"platform_official": True})
-    linked = apply_side_event_links([conference])
+def test_tier_b_is_not_a_side_event_conference_even_when_multiday_and_official():
+    conference = event("Tier B Conference", "2026-09-10", date_end="2026-09-12", tier="B", event_type="峰会", side_event_opportunity=True, metadata={"platform_official": True})
+    salon = event("Nearby Dinner", "2026-09-11", tier="B", event_type="side_event", related_to=conference.id)
+    linked = apply_side_event_links([conference, salon])
     assert linked[0].side_event_opportunity is False
+    assert linked[1].related_to == ""
 
 
 def test_d_tier_is_dropped_and_high_value_webinar_keeps_its_tier():

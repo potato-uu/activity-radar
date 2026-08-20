@@ -52,6 +52,7 @@ def update_source_health(config: RadarConfig, research_stats: dict[str, object])
         was_scanned = bool(row.get("last_scanned"))
         row["scan_count"] = int(row.get("scan_count", 1 if was_scanned else 0)) + 1
         row["last_scanned"] = now_iso()
+        row.setdefault("first_scanned", row["last_scanned"])
         if source_id in hits:
             row["last_hit"] = row["last_scanned"]
             row["no_hit_runs"] = 0
