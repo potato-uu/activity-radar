@@ -299,10 +299,10 @@ def test_push_full_and_delta_include_v2_sections_and_history(tmp_path):
     full = build_push_for_config(events, config, today=date(2026, 8, 18), mode="full")
     delta = build_push_for_config(events, config, today=date(2026, 8, 18), mode="delta")
     assert "日期待官宣" in full
-    assert "系列" in full
-    assert "side event" in full
+    assert "每周，下一场" in full
+    assert "🎪 side event 机会" not in full
     assert "unavailable" in full
-    assert "本周以来" in delta
+    assert "✏️ 变更" in delta
     assert "Side Dinner" in delta
 
 

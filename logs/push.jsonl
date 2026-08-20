@@ -22,3 +22,11 @@
 {"chars": 1938, "chunks": 2, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-19T17:47:44+00:00"}
 {"chars": 1444, "chunks": 1, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-20T01:15:31+00:00"}
 {"chars": 1489, "chunks": 1, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-20T01:38:40+00:00"}
+{"chars": 1553, "chunk_chars": [1559], "chunks": 1, "result": "{\n  \"success\": true,\n  \"platform\": \"weixin\",\n  \"chat_id\": \"o9cq80-D9ztAZflu9NZ6J42tN-34@im.wechat\",\n  \"message_id\": \"hermes-weixin-fc0cf28b510c4cba8efd5bc02beb9894\",\n  \"context_token_used\": true,\n  \"note\": \"Sent to weixin home channel (chat_id: o9cq80-D9ztAZflu9NZ6J42tN-34@im.wechat)\",\n  \"mirrored\": true\n}", "status": "sent", "target": "weixin", "timestamp": "2026-08-20T03:36:32+00:00"}
+{"chars": 2968, "chunks": 3, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-20T04:30:48+00:00"}
+{"chars": 2155, "chunks": 3, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-20T04:30:56+00:00"}
+{"chars": 2883, "chunks": 3, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-20T04:33:48+00:00"}
+{"chars": 100, "chunks": 1, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-20T04:33:53+00:00"}
+{"chars": 2841, "chunks": 3, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-20T04:39:39+00:00"}
+{"chars": 2829, "chunks": 3, "status": "dry_run", "target": "weixin", "timestamp": "2026-08-20T04:40:01+00:00"}
+{"chars": 2829, "chunk": 3, "chunk_count": 3, "error": "", "returncode": 1, "status": "failed", "target": "weixin", "timestamp": "2026-08-20T04:42:06+00:00"}

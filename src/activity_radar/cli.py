@@ -86,7 +86,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     write_events(config, events)
     generated_at = now_iso()
     render_timeline(events, config.site_path, generated_at, config.scoring)
-    message = build_push_for_config(events, config, date.today(), mode=args.push_mode)
+    message = build_push_for_config(events, config, mode=args.push_mode)
     push_path = config.root / "data/push-latest.txt"
     artifacts = write_push_artifacts(config, message, args.push_mode)
     push_result = send_via_hermes(message, config.push_target, dry_run=not args.send, output=push_path, log_path=config.root / "logs/push.jsonl")

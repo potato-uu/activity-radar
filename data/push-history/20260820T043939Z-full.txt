@@ -1,0 +1,80 @@
+📡 BD 活动雷达｜8/20 全量
+
+⭐ 必看（A 级）
+
+① 9/1 周二｜9/1 知外×领英×融创云，共探AI出海局
+获客8 资源5｜展会·上海·公开
+现场会有科技品牌负责人、出海营销从业者和关注海外获客的人，和星图比特的核心。
+🔗 https://onepilot.xin/events/xiaohongshu%3A9a1ef66a663531fc84d84303/register
+
+② 9/9 周三｜Inclusion·外滩大会 ⚠️
+获客8 资源8｜峰会·上海·公开
+现场预计包括大会组织方、金融科技和AI相关从业者及开发者。
+🔗 https://register.inclusionconf.com/
+
+③ 9/22 周二｜2026 云栖大会 ⚠️
+获客3 资源8｜峰会·杭州·公开
+现场主要会是阿里云官方生态、开发者和出海企业相关参与者。
+🔗 https://www.alibabacloud.com/zh/apsara-conference
+
+④ 10月（日期待官宣）｜2026 金投赏
+获客9 资源7｜峰会·上海·公开
+现场会有广告主、品牌marketing负责人和代理商，P0需求侧ICP密度很高。
+🔗 https://www.roifestival.com/
+
+⑤ 11月（日期待官宣）｜Morketing Summit
+获客8 资源7｜峰会·上海·公开
+现场主要会是品牌 marketing 负责人和营销平台生态，P0。
+🔗 https://www.morketing.com/
+
+⑥ 11/5 周四｜第九届中国国际进口博览会
+获客8 资源5｜峰会·上海·公开
+现场主要会是大型品牌方和跨境业务负责人，P0 需求侧比较集中。
+🔗 https://www.ciie.org/
+
+⑦ 11/7 周六｜⚡️ 2026 Google Devfest 谷歌开发者节
+获客2 资源9｜开发者大会·上海·公开
+现场主要是Google开发者社区和AI、软件工程技术从业者。
+🔗 https://onepilot.xin/events/huodongxing%3Aaa63dbbd7cce324ea5e20253/register
+
+⑧ 12月（日期待官宣）｜亚马逊全球开店卖家峰会
+获客8 资源5｜峰会·上海·公开
+现场主要会是亚马逊卖家、出海品牌负责人和跨境运营人，P1 需求侧密度高。
+🔗 https://gs.amazon.cn/
+
+📅 值得排期（B 级·未来 4 周）
+
+· 8/20 周四｜8.20 AI出海获客沙龙-陆家嘴出海局｜获客7
+🔗 https://onepilot.xin/events/cumen%3Ae0de637e88a7f75dfc602b6e/register
+· 8/20 周四｜AI科创下午茶第71期：桌面AI智能体平台发展现状及机遇｜获客3
+🔗 https://onepilot.xin/events/ingest-584-ai-tech-tea-71-20260820/register
+· 8/20 周四｜徐汇滨江AI 出海Drink Chat｜获客7
+🔗 https://onepilot.xin/events/cumen%3A0ade1163d9706b72ca9c35ec/register
+· 8/21 周五｜AIOps & Data Day 可观测性与 AI Agent 闭门交流会｜获客2
+🔗 https://onepilot.xin/events/lianpu%3Ad998d2099c5bad38d3a6242a/register
+· 8/21 周五｜Markethon 2026 卖客松：没有假信号的销售黑客松｜获客6
+🔗 https://onepilot.xin/events/event-ingest-candidate-403/register
+· 8/21 周五｜TRAE AI 创造力大赛｜获客2
+🔗 https://onepilot.xin/events/builderlab%3Ab7af768f2a05c0573eb18378/register
+· 8/22 周六｜Next Founder Meetup：创始人之约｜获客6
+🔗 https://onepilot.xin/events/manual-next-founder-meetup-20260822/register
+· 8/23 周日｜AI内容增长酒会—自媒体·出海·获客｜获客7
+🔗 https://onepilot.xin/events/cumen%3Ab6c282f5977b6d1756b5edc1/register
+· 8/25 周二｜AI+生态招商沙龙｜获客7
+🔗 https://onepilot.xin/events/0735fac7-b0c4-4560-bda4-2b7936d72a07/register
+· 8/28 周五｜AI出海闭门沙龙！共话中国AI出海新格局｜获客6
+🔗 https://onepilot.xin/events/huodongxing%3Aeabf155f1e2c0e4d61beb75f/register
+· 9月（日期待官宣）｜CCEE 雨果跨境电商选品大会｜获客7
+🔗 https://www.cifnews.com/
+· 9/5 周六｜AICD - Shanghai｜获客1
+🔗 https://www.eventbrite.be/e/aicd-shanghai-tickets-1993450493087
+· 9/5 周六｜微信开发者创新工坊｜上海站：与 AI 共生小程序开发者交流｜获客2
+🔗 https://onepilot.xin/events/manual-feishu-wechat-dev-workshop-shanghai-20260905/register
+
+🎪 side event 机会
+
+· 9/9 周三｜Inclusion·外滩大会 ⚠️｜获客8
+🔗 https://register.inclusionconf.com/
+
+🌐 完整时间轴 https://potato-uu.github.io/activity-radar/
+🩺 源健康：连续 4 周无 hit：无；新源观察中：13 个；unavailable/异常：10times, baidu-ai-events, brandstar, eventbrite-shanghai-ai, huodongxing, luma-shanghai-ai, meetup-shanghai-ai, meta-china-marketing, microsoft-reactor-shanghai, morketing, mosu-space, openai-news-events, wechat-search

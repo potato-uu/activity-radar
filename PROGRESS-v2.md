@@ -357,3 +357,57 @@ PYTHONPATH=src .venv/bin/python -m activity_radar.cli push --mode delta
 - 无阻塞项。按本轮明确禁区未抓网页、未联网、未启动 Chromium、未真实发送 Hermes、未读取或打印密钥。
 - 未执行 `git add/commit/rebase/checkout/push`；只运行了 `git status`、`git diff`、`git diff --check` 等只读检查。
 - `data/events.jsonl` 未重写；P2 对现有旧关联由推送层即时过滤，下一次正常 merge 会按新规则重算并清空不合格的 B 级大会关联。
+
+## 2026-08-19 微信排版轮进行中
+
+- 已完整读取 `BRIEF-v2-2026-08-18.md` §13，并复核 §2 禁区与 §8 沙箱续跑约束。
+- 当前执行边界：只修改微信纯文本排版、相关单测、dry-run 样张与本进度文件；不做 git 写操作、不外发、不启动 Chromium、不抓网页。
+- TDD RED 进行中：正在为 full 关键行顺序、A 级理由截断、expected/系列/needs_review 标记与 delta 分类链接添加失败测试。
+
+## 微信排版轮 Report
+
+时间：2026-08-19 21:35 PDT（上海日期 2026-08-20）
+
+### 结果
+
+- Passed：full 已改为 `📡` 标题、A 级三行信息 + 独立链接、B/截止/side event 两行式、时间轴与单行源健康；段落空行按 §13 模板生成。
+- Passed：delta 已改为 `🆕 新增 / ✏️ 变更 / ❌ 取消`，每条活动使用两行式并保留独立链接；无变化时只输出现有一句话文案 + 时间轴。
+- Passed：日期为 `M/D 周X`，expected 为 `M月（日期待官宣）`；A 级理由只取第一句、最长 40 字且句号结尾；支持 ①-⑳ 与 21 以后数字序号、`⚠️`、系列下一场和非 http 链接抑制。
+- Passed：side event 保留上一轮语义，每场合格 A 级大会展示最多 5 个周边局，每个展示项都有自己的可点击 URL，超出数量用一行汇总。
+
+### 回归与验收
+
+| 检查 | 状态 | 证据 |
+|---|---|---|
+| 新格式 TDD | Passed | 首轮 6 项测试先以旧格式失败，实现后 `6 passed`；后续上海日期/delta 边界 2 项也经历 RED -> GREEN。 |
+| 全套单测 | Passed | `PYTHONPATH=src .venv/bin/python -m pytest --override-ini addopts= -q` -> `83 passed in 0.83s`。 |
+| 编译 | Passed | `.venv/bin/python -m compileall -q src tests` -> 退出 0。 |
+| 空白错误 | Passed | `git diff --check` -> 退出 0。仅检查，未执行 git 写操作。 |
+| full 分块 | Passed | 2883 字，3 块，真实最大块 1484 字，低于 1800。 |
+| delta 分块 | Passed | 100 字，1 块，加 `（1/1）` 前缀后 106 字，低于 1800。 |
+| 外发/Chromium/网页 | Not tested（按禁区） | 两次最终 CLI 均返回 `status=dry_run`；未使用 `--send`，未启动 Chromium，未抓网页。 |
+
+### 最终样张
+
+- full：`data/push-history/20260820T043348Z-full.txt`，**2883 字**，3 块。
+- delta：`data/push-history/20260820T043353Z-delta.txt`，**100 字**，1 块。
+- `data/push-latest.txt` 指向最后一次生成的 delta 样张。本轮中间样张已删除；任务开始前已有的 `20260820T033628Z-full.txt` 未动。
+
+### 补充修正
+
+- 修正了 Mac 系统时区导致的头部日期偏差：未显式传 `today` 时，统一使用 `Asia/Shanghai` 日期；最终样张正确显示 `8/20`。
+- 修正了 delta 重放所有历史 `changed/cancelled` 的问题：现在仅保留最后一次 full 之后的变化；紧接 full 生成的最终 delta 因无新变化，正确输出 100 字无变化样张。
+
+### 产出与应提交文件
+
+- 代码：`src/activity_radar/push.py`、`src/activity_radar/cli.py`。
+- 测试：`tests/test_repairs.py`、`tests/test_pipeline.py`。
+- dry-run 产物：`data/push-history/20260820T043348Z-full.txt`、`data/push-history/20260820T043353Z-delta.txt`、`data/push-latest.txt`、`logs/push.jsonl`。
+- 进度：`PROGRESS-v2.md`。
+- 建议提交信息：`fix: redesign activity radar wechat layout`。本轮未执行 add/commit/rebase/checkout/push。
+
+### Blocked / Deviations
+
+- 无阻塞项，无未满足的 §13 关键格式项。
+- 按 §2/§8 未联网、未抓网页、未启动 Chromium、未外发、未读取或打印密钥，未做任何 git 写操作。
+- `BRIEF-v2-2026-08-18.md`、`data/push-history/20260820T033628Z-full.txt` 与本轮开始前已有的 `logs/push.jsonl` 改动未回退；只在后者追加了本轮 dry-run 记录。

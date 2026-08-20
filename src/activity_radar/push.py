@@ -98,17 +98,28 @@ def _seen_since(event: Event, boundary: datetime | None, today: date, fallback_d
     return seen >= boundary
 
 
-def _date_label(event: Event) -> str:
-    date_label = event.date_start or "日期待定"
-    if event.date_precision == "month" and event.date_start:
-        parsed = parse_iso(event.date_start)
-        date_label = f"{parsed.year}年{parsed.month}月" if parsed else date_label
-    if event.status == "expected" or event.date_precision == "month":
-        date_label += "（日期待官宣）"
+def _short_date(value: date) -> str:
+    return f"{value.month}/{value.day}"
+
+
+def _date_label(event: Event, today: date) -> str:
+    parsed = parse_iso(event.date_start)
+    if (event.status == "expected" or event.date_precision == "month") and parsed:
+        label = f"{parsed.month}月（日期待官宣）"
+    elif parsed:
+        weekday = "一二三四五六日"[parsed.weekday()]
+        label = f"{_short_date(parsed)} 周{weekday}"
+    else:
+        label = "日期待定"
     if event.is_series and len(event.occurrences) >= 2:
-        dates = "、".join(event.occurrences)
-        date_label += f"（系列：{dates}）"
-    return date_label
+        occurrences = sorted(filter(None, (parse_iso(value) for value in event.occurrences)))
+        upcoming = [value for value in occurrences if value >= today and (not parsed or value > parsed)]
+        if not upcoming:
+            upcoming = [value for value in occurrences if value >= today]
+        next_date = upcoming[0] if upcoming else parsed
+        if next_date:
+            label += f"（每周，下一场 {_short_date(next_date)}）"
+    return label
 
 
 def _type_city_format(event: Event) -> str:
@@ -117,26 +128,48 @@ def _type_city_format(event: Event) -> str:
     return f"{type_label}·{event.city}·{format_label}"
 
 
-def _compact_line(event: Event) -> str:
-    warning = " ⚠️" if event.needs_review else ""
-    return (
-        f"- {_date_label(event)}｜{event.name}｜Tier {event.tier}{warning}｜"
-        f"获客 {event.acquisition_score:g} / 资源 {event.ecosystem_score:g}｜{_type_city_format(event)}"
-    )
+def _event_name(event: Event) -> str:
+    return f"{event.name}{' ⚠️' if event.needs_review else ''}"
 
 
 def _reason_text(reason: str) -> str:
     text = " ".join(part.strip() for part in str(reason or "").splitlines() if part.strip())
     if not text:
         return "理由待补充。"
-    parts = [part.strip() for part in re.split(r"(?<=[。！？!?])\s*", text) if part.strip()]
-    if len(parts) < 2:
-        parts = [part.strip() for part in re.split(r"[；;]\s*", text) if part.strip()]
-    return " ".join(parts[:2])
+    first = re.split(r"[。！？!?\.]", text, maxsplit=1)[0].strip()
+    body = first.rstrip("。！？!?.,，；; ") or "理由待补充"
+    if len(body) >= 40:
+        clipped = body[:39]
+        boundary = max(clipped.rfind(ch) for ch in "，、；：,;:")
+        body = (clipped[:boundary] if boundary >= 15 else clipped).rstrip("。！？!?.,，、；;：: ")
+    return f"{body}。"
 
 
-def _discovery_block(event: Event) -> str:
-    return f"{_compact_line(event)}\n  理由：{_reason_text(event.reason)}"
+def _link_line(event: Event) -> str:
+    url = str(event.url or "").strip()
+    return f"🔗 {url}" if url.lower().startswith(("http://", "https://")) else ""
+
+
+def _number_label(index: int) -> str:
+    return chr(0x2460 + index - 1) if index <= 20 else f"{index}."
+
+
+def _a_event_block(event: Event, index: int, today: date) -> str:
+    lines = [
+        f"{_number_label(index)} {_date_label(event, today)}｜{_event_name(event)}",
+        f"获客{event.acquisition_score:g} 资源{event.ecosystem_score:g}｜{_type_city_format(event)}",
+        _reason_text(event.reason),
+    ]
+    if link := _link_line(event):
+        lines.append(link)
+    return "\n".join(lines)
+
+
+def _two_line_event(event: Event, today: date) -> str:
+    lines = [f"· {_date_label(event, today)}｜{_event_name(event)}｜获客{event.acquisition_score:g}"]
+    if link := _link_line(event):
+        lines.append(link)
+    return "\n".join(lines)
 
 
 def _scale_at_least(event: Event, threshold: int) -> bool:
@@ -249,22 +282,12 @@ def build_push(events: list[Event], config: RadarConfig, today: date | None = No
 
 
 def build_push_for_config(events: list[Event], config: RadarConfig, today: date | None = None, *, mode: str = "full") -> str:
-    today = today or date.today()
+    today = today or _shanghai_time().date()
     if mode not in {"full", "delta"}:
         raise ValueError("push mode must be full or delta")
     valid_events = [event for event in events if _valid_for_push(event, config)]
     eligible_events = [event for event in valid_events if event.tier in {"A", "B"}]
     boundary = _last_artifact_time(config, "full")
-    if mode == "full":
-        recent = [event for event in valid_events if _seen_since(event, boundary, today, 7)]
-        new_events = [event for event in recent if event.tier in {"A", "B"}]
-        recent_c_count = sum(1 for event in recent if event.tier == "C")
-    else:
-        recent = [event for event in eligible_events if _seen_since(event, boundary, today, 3)]
-        new_events = [event for event in recent if event.status not in {"cancelled"}] + [
-            event for event in eligible_events if event.status in {"changed", "cancelled"} and event not in recent
-        ]
-        recent_c_count = 0
     window_end = today + timedelta(days=28)
 
     def in_future_window(event: Event) -> bool:
@@ -279,64 +302,85 @@ def build_push_for_config(events: list[Event], config: RadarConfig, today: date 
             return month_end >= today and start <= window_end
         return today <= start <= window_end
 
-    future = [event for event in eligible_events if in_future_window(event)]
-    alerts = [event for event in eligible_events if (deadline := parse_iso(event.register_deadline)) and today <= deadline <= today + timedelta(days=7)]
-    side_conferences = []
-    for event in valid_events:
-        if not _is_side_conference(event):
-            continue
-        side_conferences.append(event)
-    side_lines: list[str] = []
-    for conference in side_conferences:
-        related = [event.name for event in valid_events if event.related_to == conference.id and event.id != conference.id and event.status != "cancelled"]
-        visible = related[:5]
-        suffix = "、".join(visible) if visible else "周边局待发现"
-        if len(related) > 5:
-            suffix += f"等 {len(related) - 5} 个"
-        side_lines.append(f"- {conference.name}（{_date_label(conference)}）：{suffix}")
+    def sort_key(event: Event) -> tuple[str, str]:
+        return (event.date_start or "9999-12-31", event.name)
 
-    if mode == "delta" and not new_events and not alerts:
-        new_text = "- 本周三无新增，本周无变更，雷达正常，下次周日 18:00"
-    elif mode == "delta":
-        new_text = "\n".join(_compact_line(event) for event in new_events) or "- 无"
-    else:
-        blocks = [_discovery_block(event) for event in new_events[:12]]
-        if mode == "full" and len(new_events) > 12:
-            blocks.append(f"- 另有 {len(new_events) - 12} 条新发现见网页")
-        if mode == "full" and recent_c_count:
-            blocks.append(f"- 另有 C 级 {recent_c_count} 条，见网页")
-        new_text = "\n\n".join(blocks) or "- 无"
-    future_text = "\n".join(_compact_line(event) for event in future) or "- 无"
-    alert_text = "\n".join(_compact_line(event) for event in alerts) or "- 无"
+    def is_upcoming(event: Event) -> bool:
+        start = parse_iso(event.date_start)
+        end = parse_iso(event.date_end) or start
+        if not start or not end:
+            return False
+        if event.date_precision == "month" or event.status == "expected":
+            if start.month == 12:
+                end = date(start.year, 12, 31)
+            else:
+                end = date(start.year, start.month + 1, 1) - timedelta(days=1)
+        return end >= today
+
+    active_eligible = [event for event in eligible_events if event.status != "cancelled"]
+    alerts = sorted(
+        [event for event in active_eligible if (deadline := parse_iso(event.register_deadline)) and today <= deadline <= today + timedelta(days=7)],
+        key=lambda event: (event.register_deadline, *sort_key(event)),
+    )
+    timeline = f"🌐 完整时间轴 {TIMELINE_URL}"
+
     if mode == "delta":
-        return "\n".join([
-            "上海 BD 活动雷达",
-            "模式：delta",
-            "",
-            "1. 本周以来新增/变更/取消",
-            new_text,
-            "",
-            "2. 报名/购票截止 <= 7 天",
-            alert_text,
-            "",
-            f"完整时间轴：{TIMELINE_URL}",
-        ])
+        recent = [event for event in eligible_events if _seen_since(event, boundary, today, 3)]
+        additions = sorted([event for event in recent if event.status not in {"changed", "cancelled"}], key=sort_key)
+
+        def changed_since_full(event: Event) -> bool:
+            changed_at = _parse_datetime(event.last_verified) or _parse_datetime(event.first_seen)
+            if changed_at is None:
+                return True
+            if boundary is None:
+                return changed_at.date() >= today - timedelta(days=3)
+            return changed_at >= boundary
+
+        changes = sorted([event for event in eligible_events if event.status == "changed" and changed_since_full(event)], key=sort_key)
+        cancellations = sorted([event for event in eligible_events if event.status == "cancelled" and changed_since_full(event)], key=sort_key)
+        header = f"📡 BD 活动雷达｜{today.month}/{today.day} 增量"
+        if not additions and not changes and not cancellations and not alerts:
+            return "\n\n".join([
+                header,
+                "本周三无新增，本周无变更，雷达正常，下次周日 18:00",
+                timeline,
+            ])
+        sections = [header]
+        for heading, rows in (("🆕 新增", additions), ("✏️ 变更", changes), ("❌ 取消", cancellations)):
+            if rows:
+                sections.append(f"{heading}\n\n" + "\n".join(_two_line_event(event, today) for event in rows))
+        if alerts:
+            sections.append("⏰ 报名截止 ≤7 天\n\n" + "\n".join(_two_line_event(event, today) for event in alerts))
+        sections.append(timeline)
+        return "\n\n".join(sections)
+
+    a_events = sorted([event for event in active_eligible if event.tier == "A" and is_upcoming(event)], key=sort_key)
+    b_events = sorted([event for event in active_eligible if event.tier == "B" and in_future_window(event)], key=sort_key)
+    side_conferences = sorted([event for event in active_eligible if _is_side_conference(event) and in_future_window(event)], key=sort_key)
+    a_text = "\n\n".join(_a_event_block(event, index, today) for index, event in enumerate(a_events, 1)) or "暂无"
+    b_text = "\n".join(_two_line_event(event, today) for event in b_events) or "暂无"
     sections = [
-        "上海 BD 活动雷达",
-        f"模式：{mode}",
-        "",
-        "1. 本周新发现" if mode == "full" else "1. 本周以来新增/变更/取消",
-        new_text,
-        "",
-        "2. 未来 4 周 Tier A/B",
-        future_text,
-        "",
-        "3. 报名/购票截止 <= 7 天",
-        alert_text,
+        f"📡 BD 活动雷达｜{today.month}/{today.day} 全量",
+        f"⭐ 必看（A 级）\n\n{a_text}",
+        f"📅 值得排期（B 级·未来 4 周）\n\n{b_text}",
     ]
-    sections.extend(["", "4. side event 机会", "\n".join(side_lines) or "- 无"])
-    sections.extend(["", f"5. {_health_line(config, today)}", "", f"完整时间轴：{TIMELINE_URL}"])
-    return "\n".join(sections)
+    if alerts:
+        sections.append("⏰ 报名截止 ≤7 天\n\n" + "\n".join(_two_line_event(event, today) for event in alerts))
+    if side_conferences:
+        side_rows: list[str] = []
+        for conference in side_conferences:
+            side_rows.append(_two_line_event(conference, today))
+            related = sorted(
+                [event for event in active_eligible if event.related_to == conference.id and event.id != conference.id],
+                key=sort_key,
+            )
+            side_rows.extend(_two_line_event(event, today) for event in related[:5])
+            if len(related) > 5:
+                side_rows.append(f"· 等 {len(related) - 5} 个周边局见时间轴")
+        sections.append("🎪 side event 机会\n\n" + "\n".join(side_rows))
+    health = _health_line(config, today).removeprefix("源健康度：")
+    sections.append(f"{timeline}\n🩺 源健康：{health}")
+    return "\n\n".join(sections)
 
 
 def send_via_hermes(
@@ -368,22 +412,30 @@ def send_via_hermes(
     chunks = split_message(message)
     sleep_fn = sleep_fn or time.sleep
     for index, chunk in enumerate(chunks, 1):
-        result = subprocess.run([executable, "send", "--to", target, "--file", "-", "--json"], input=chunk, text=True, capture_output=True, check=False)
-        if result.returncode != 0:
+        # iLink rate-limits bursts of consecutive messages; retry a failed chunk
+        # after progressively longer cooldowns before giving up.
+        for attempt, cooldown in enumerate((120, 300, None)):
+            result = subprocess.run([executable, "send", "--to", target, "--file", "-", "--json"], input=chunk, text=True, capture_output=True, check=False)
+            if result.returncode == 0:
+                break
+            error_text = (result.stderr.strip() or result.stdout.strip())[:500]
             if log_path:
                 append_jsonl(log_path, {
                     "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                    "status": "failed",
+                    "status": "retrying" if cooldown else "failed",
                     "target": target,
                     "chars": len(message),
                     "chunk": index,
                     "chunk_count": len(chunks),
+                    "attempt": attempt + 1,
                     "returncode": result.returncode,
-                    "error": result.stderr.strip()[:500],
+                    "error": error_text,
                 })
-            raise RuntimeError(f"Hermes send failed ({result.returncode}) on chunk {index}/{len(chunks)}: {result.stderr.strip()}")
+            if cooldown is None:
+                raise RuntimeError(f"Hermes send failed ({result.returncode}) on chunk {index}/{len(chunks)} after {attempt + 1} attempts: {error_text}")
+            sleep_fn(cooldown)
         if index < len(chunks):
-            sleep_fn(35)
+            sleep_fn(45)
     response = {"status": "sent", "target": target, "chars": len(message), "chunks": len(chunks), "chunk_chars": [len(chunk) for chunk in chunks], "result": result.stdout.strip()}
     if log_path:
         append_jsonl(log_path, {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **response})
