@@ -498,11 +498,11 @@ def test_prefilter_drops_navigation_missing_dates_and_nonofficial_other_cities(t
     scoring = RadarConfig.load(isolated_root(tmp_path)).scoring
     rows = [
         {"name": "Skip to main content", "date_start": "", "city": "上海", "source": "google-developers-cn"},
-        {"name": "报名中", "date_start": "2026-08-20", "city": "上海", "source": "cifnews-ccee"},
-        {"name": "eMAG2026中国卖家峰会—深圳", "date_start": "2026-08-20", "city": "深圳", "source": "cifnews-ccee"},
-        {"name": "Google 官方深圳开发者大会", "date_start": "2026-09-01", "city": "深圳", "source": "google-developers-cn"},
-        {"name": "Shanghai AI Growth Summit", "date_start": "2026-09-02", "city": "上海", "source": "onepilot"},
-        {"name": "海外品牌峰会", "date_start": "2026-09-03", "city": "海外", "source": "calendar-seed"},
+        {"name": "报名中", "date_start": "2027-08-20", "city": "上海", "source": "cifnews-ccee"},
+        {"name": "eMAG2027中国卖家峰会—深圳", "date_start": "2027-08-20", "city": "深圳", "source": "cifnews-ccee"},
+        {"name": "Google 官方深圳开发者大会", "date_start": "2027-09-01", "city": "深圳", "source": "google-developers-cn"},
+        {"name": "Shanghai AI Growth Summit", "date_start": "2027-09-02", "city": "上海", "source": "onepilot"},
+        {"name": "海外品牌峰会", "date_start": "2027-09-03", "city": "海外", "source": "calendar-seed"},
     ]
     kept, counts = prefilter_candidates(rows, scoring)
     assert [row["name"] for row in kept] == ["Google 官方深圳开发者大会", "Shanghai AI Growth Summit"]
