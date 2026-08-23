@@ -39,9 +39,11 @@ def _shanghai_time(now: datetime | None = None) -> datetime:
 def auto_mode(now: datetime | None = None) -> str | None:
     """Return the scheduled mode for the current Shanghai hour, or None to skip."""
     local = _shanghai_time(now)
-    if local.weekday() == 6 and local.hour == 18:
+    # >= instead of == so a missed exact hour (agent down, machine asleep) still
+    # sends later the same day; has_successful_auto_run keeps it once per day.
+    if local.weekday() == 6 and local.hour >= 18:
         return "full"
-    if local.weekday() == 2 and local.hour == 10:
+    if local.weekday() == 2 and local.hour >= 10:
         return "delta"
     return None
 

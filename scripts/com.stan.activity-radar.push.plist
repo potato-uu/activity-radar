@@ -7,15 +7,15 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/zsh</string>
-    <string>/Users/stan/Documents/Stan BD商务/scripts/push_local.sh</string>
+    <string>/Users/stan/.local/bin/activity-radar-push.zsh</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/stan/Documents/Stan BD商务</string>
+  <string>/Users/stan</string>
   <key>StartCalendarInterval</key>
   <dict><key>Minute</key><integer>5</integer></dict>
   <key>StandardOutPath</key>
-  <string>/Users/stan/Documents/Stan BD商务/logs/launchagent.log</string>
+  <string>/Users/stan/.local/share/activity-radar-launchagent.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/stan/Documents/Stan BD商务/logs/launchagent.log</string>
+  <string>/Users/stan/.local/share/activity-radar-launchagent.log</string>
 </dict>
 </plist>

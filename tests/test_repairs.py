@@ -656,3 +656,13 @@ def test_send_via_hermes_retries_rate_limited_chunk(tmp_path, monkeypatch):
     assert 120 in sleeps
     rows = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
     assert any(r.get("status") == "retrying" and "rate limited" in r.get("error", "") for r in rows)
+
+
+def test_auto_mode_catches_up_later_same_day():
+    """A missed exact hour still sends later the same Shanghai day."""
+    late_sunday = datetime(2026, 8, 23, 15, 0, tzinfo=timezone.utc)  # 23:00 Shanghai Sunday
+    late_wednesday = datetime(2026, 8, 26, 7, 0, tzinfo=timezone.utc)  # 15:00 Shanghai Wednesday
+    before_window = datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc)  # 17:00 Shanghai Sunday
+    assert auto_mode(late_sunday) == "full"
+    assert auto_mode(late_wednesday) == "delta"
+    assert auto_mode(before_window) is None
