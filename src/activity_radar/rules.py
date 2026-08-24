@@ -11,9 +11,14 @@ from .normalization import infer_city
 from .schema import Event, parse_iso, validate_event
 
 
-def normalize_name(name: str) -> str:
+def _strip_series_issue(name: str) -> str:
     value = re.sub(r"(?i)\bvol(?:ume)?\.?\s*\d+\b", "", name)
-    value = re.sub(r"第\s*\d+\s*(?:期|届|场)", "", value)
+    value = re.sub(r"(?:第\s*)?\d+\s*期|第\s*\d+\s*(?:届|场)", "", value)
+    return value
+
+
+def normalize_name(name: str) -> str:
+    value = _strip_series_issue(name)
     return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", value.lower())
 
 
@@ -234,40 +239,66 @@ def prepare_event(raw: dict[str, Any], source_id: str, now: str, scoring: dict[s
     corrections = scoring.get("corrections", {})
     acquisition = event.acquisition_score
     ecosystem = event.ecosystem_score
+    raw_scores = {"acquisition_score": acquisition, "ecosystem_score": ecosystem}
+    applied_corrections: list[str] = []
     if event.audience_side == "supply":
-        acquisition = min(acquisition, float(corrections.get("supply_acquisition_cap", 4)))
+        capped = min(acquisition, float(corrections.get("supply_acquisition_cap", 4)))
+        if capped != acquisition:
+            applied_corrections.append("supply_acquisition_cap")
+        acquisition = capped
     scale_numbers = [int(value) for value in re.findall(r"\d+", event.scale_hint)]
-    is_small = any(value < 30 for value in scale_numbers) if "展商" in event.scale_hint else any(value < 200 for value in scale_numbers)
-    if scale_numbers and is_small and event.format == "open":
+    scale_label = event.scale_hint.strip().lower()
+    explicitly_small = scale_label in {"small", "small_salon", "small_open", "小型", "小规模"}
+    is_small = (any(value < 30 for value in scale_numbers) if "展商" in event.scale_hint else any(value < 200 for value in scale_numbers)) if scale_numbers else explicitly_small
+    if is_small and event.format == "open":
         penalty = abs(float(corrections.get("small_open", -2)))
         acquisition -= penalty
         ecosystem -= penalty
+        applied_corrections.append("small_open")
     if raw.get("is_training") or re.search(r"课程|培训|训练营|实训|公开课|体验课|workshop|bootcamp|training", f"{event.name} {event.reason}", flags=re.IGNORECASE):
-        acquisition = min(acquisition, float(corrections.get("pure_training_acquisition_cap", 3)))
+        capped = min(acquisition, float(corrections.get("pure_training_acquisition_cap", 3)))
+        if capped != acquisition:
+            applied_corrections.append("pure_training_acquisition_cap")
+        acquisition = capped
     salon_types = {"沙龙", "沙龙·meetup"}
     salon_scale_unknown = not scale_numbers or event.scale_hint.strip().lower() in {"", "unknown", "未知"}
     salon_under_200 = bool(scale_numbers) and max(scale_numbers) < 200
-    if event.event_type in salon_types and event.format == "open" and (salon_scale_unknown or salon_under_200):
+    if event.event_type in salon_types and event.format == "open" and (salon_scale_unknown or salon_under_200 or explicitly_small):
         cap = float(corrections.get("small_open_salon_cap", 7))
-        acquisition = min(acquisition, cap)
-        ecosystem = min(ecosystem, cap)
+        capped_acquisition = min(acquisition, cap)
+        capped_ecosystem = min(ecosystem, cap)
+        if (capped_acquisition, capped_ecosystem) != (acquisition, ecosystem):
+            applied_corrections.append("small_open_salon_cap")
+        acquisition, ecosystem = capped_acquisition, capped_ecosystem
     nearby = set(scoring.get("nearby_cities", ["杭州", "苏州", "南京", "宁波", "无锡", "合肥", "嘉兴", "南通"]))
     if event.city in nearby:
         penalty = abs(float(corrections.get("nearby_city", -1)))
         acquisition -= penalty
         ecosystem -= penalty
+        applied_corrections.append("nearby_city")
     elif event.city not in {scoring.get("primary_city", "上海"), "Shanghai", "线上"}:
         penalty = abs(float(corrections.get("other_domestic", -2)))
         acquisition -= penalty
         ecosystem -= penalty
+        applied_corrections.append("other_domestic")
         event.metadata["web_only"] = True
     if event.format == "invite_only":
         penalty = abs(float(corrections.get("invitation_only", -1)))
         acquisition -= penalty
         ecosystem -= penalty
+        applied_corrections.append("invitation_only")
         event.metadata["invitation_note"] = "值得托关系"
     event.acquisition_score = max(0.0, min(10.0, acquisition))
     event.ecosystem_score = max(0.0, min(10.0, ecosystem))
+    if applied_corrections:
+        event.metadata["score_audit"] = {
+            "raw": raw_scores,
+            "applied": applied_corrections,
+            "final": {
+                "acquisition_score": event.acquisition_score,
+                "ecosystem_score": event.ecosystem_score,
+            },
+        }
     event.tier = classify_tier(event.acquisition_score, event.ecosystem_score, event.city, event.event_type, scoring)
     event.action = raw.get("action") or choose_action(event)
     # Series status is produced only by _collapse_series. LLM output is a hint, not state.
@@ -285,7 +316,7 @@ def _collapse_series(candidates: Iterable[Event]) -> list[Event]:
         groups.setdefault((normalize_name(event.name), event.city), []).append(event)
     singles: list[Event] = []
     for grouped in groups.values():
-        dates = sorted({item.date_start for item in grouped if item.date_start})
+        dates = sorted({value for item in grouped for value in [item.date_start, *item.occurrences] if value})
         if len(grouped) == 1 or len(dates) < 2:
             occurrence_dates = sorted(set(grouped[0].occurrences))
             if len(occurrence_dates) >= 2:
@@ -306,7 +337,7 @@ def _collapse_series(candidates: Iterable[Event]) -> list[Event]:
             continue
         grouped.sort(key=lambda item: (item.date_start, item.name))
         series = deepcopy(grouped[0])
-        series.name = re.sub(r"(?i)\s*\bvol(?:ume)?\.?\s*\d+\b|\s*第\s*\d+\s*(?:期|届|场)", "", series.name).strip()
+        series.name = _strip_series_issue(series.name).strip()
         series.date_start = dates[0]
         series.date_end = dates[-1]
         series.is_series = True
@@ -320,6 +351,22 @@ def _collapse_series(candidates: Iterable[Event]) -> list[Event]:
         }
         singles.append(series)
     return singles
+
+
+def _preserve_series_state(existing: Event, candidate: Event) -> Event:
+    dates = sorted({value for event in (existing, candidate) for value in [event.date_start, *event.occurrences] if value})
+    candidate.name = _strip_series_issue(candidate.name).strip()
+    candidate.date_start = dates[0]
+    candidate.date_end = dates[-1]
+    candidate.is_series = True
+    candidate.occurrences = dates
+    candidate.metadata = {
+        **candidate.metadata,
+        "series_rule": True,
+        "is_series": True,
+        "occurrences": dates,
+    }
+    return candidate
 
 
 def _collapse_seed_matches(events: Iterable[Event]) -> list[Event]:
@@ -390,7 +437,7 @@ def merge_events(existing: Iterable[Event], candidates: Iterable[Event], city_sc
         event.city = infer_city(event.name, event.venue, event.reason, event.city)
         valid, _reason = is_valid_candidate(event.to_dict(), scoring)
         allowed_existing = event.city in city_scope or (event.metadata.get("web_only") and event.tier == "A") or event.event_type == "webinar"
-        if not valid or not allowed_existing or event.tier == "D":
+        if not valid or not allowed_existing:
             continue
         if re.search(r"课程|培训|训练营|实训|公开课|体验课|workshop|bootcamp|training", f"{event.name} {event.reason}", flags=re.IGNORECASE):
             event.acquisition_score = min(event.acquisition_score, training_cap)
@@ -400,12 +447,10 @@ def merge_events(existing: Iterable[Event], candidates: Iterable[Event], city_sc
             event.acquisition_score = min(event.acquisition_score, salon_cap)
             event.ecosystem_score = min(event.ecosystem_score, salon_cap)
         event.tier = classify_tier(event.acquisition_score, event.ecosystem_score, event.city, event.event_type, scoring)
-        if event.tier == "D":
-            continue
         cleaned_existing.append(event)
     merged = _collapse_duplicates(_collapse_seed_matches(_collapse_series(cleaned_existing)))
     stats = {"new": 0, "changed": 0, "unchanged": 0, "dropped": 0, "invalid": 0}
-    mutable_fields = ("name", "name_en", "date_start", "date_end", "city", "venue", "organizer", "url", "ticket_price", "register_deadline", "event_type", "acquisition_score", "ecosystem_score", "tier", "action", "reason", "source", "date_precision", "audience_side", "scale_hint", "format", "is_series", "occurrences", "side_event_opportunity", "related_to", "score_history", "needs_review", "metadata")
+    mutable_fields = ("name", "name_en", "date_start", "date_end", "city", "venue", "organizer", "url", "ticket_price", "register_deadline", "event_type", "acquisition_score", "ecosystem_score", "tier", "action", "reason", "source", "date_precision", "audience_side", "scale_hint", "format", "is_series", "occurrences", "side_event_opportunity", "related_to", "needs_review", "metadata")
     for candidate in _collapse_seed_matches(_collapse_series(candidates)):
         candidate_valid, _candidate_reason = is_valid_candidate(candidate.to_dict(), scoring)
         if not candidate_valid:
@@ -439,15 +484,17 @@ def merge_events(existing: Iterable[Event], candidates: Iterable[Event], city_sc
             merged.append(candidate)
             stats["new"] += 1
             continue
+        if normalize_name(match.name) == normalize_name(candidate.name) and (match.is_series or candidate.is_series):
+            candidate = _preserve_series_state(match, candidate)
         if match.source != candidate.source or normalize_name(match.name) != normalize_name(candidate.name):
             candidate = _merge_duplicate_pair(match, candidate)
         changed = any(getattr(match, field) != getattr(candidate, field) for field in mutable_fields)
         if changed:
             previous_acquisition = match.acquisition_score
             previous_ecosystem = match.ecosystem_score
-            history = _combine_score_history(match, candidate)
+            history = list(match.score_history or _score_history_for(match))
             current_score = {"timestamp": candidate.last_verified, "acquisition_score": candidate.acquisition_score, "ecosystem_score": candidate.ecosystem_score}
-            if not history or history[-1].get("acquisition_score") != candidate.acquisition_score or history[-1].get("ecosystem_score") != candidate.ecosystem_score:
+            if (previous_acquisition, previous_ecosystem) != (candidate.acquisition_score, candidate.ecosystem_score):
                 history.append(current_score)
             needs_review = abs(previous_acquisition - candidate.acquisition_score) > 2 or abs(previous_ecosystem - candidate.ecosystem_score) > 2
             first_seen = match.first_seen
@@ -464,6 +511,7 @@ def merge_events(existing: Iterable[Event], candidates: Iterable[Event], city_sc
         else:
             match.last_verified = candidate.last_verified
             stats["unchanged"] += 1
+    merged = _collapse_duplicates(_collapse_seed_matches(_collapse_series(merged)))
     merged = apply_side_event_links(merged)
     merged.sort(key=lambda item: (item.date_start or "9999-12-31", item.name))
     return merged, stats

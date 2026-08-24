@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from .config import RadarConfig
-from .io import read_json, read_jsonl, write_json, write_jsonl
+from .io import append_jsonl, read_json, read_jsonl, write_json, write_jsonl
+from .normalization import clean_source_title, infer_city
 from .push import (
     auto_mode,
     build_push_for_config,
@@ -80,7 +82,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     config = RadarConfig.load(root_from_args(args))
     fixture = Path(args.fixture).expanduser() if args.fixture else None
     source_ids = [item.strip() for item in (args.sources or "").split(",") if item.strip()] or None
-    candidates, research_stats = discover_and_score(config, fixture=fixture, live=args.live, source_ids=source_ids)
+    as_of = date.fromisoformat(args.as_of) if args.as_of else None
+    candidates, research_stats = discover_and_score(config, fixture=fixture, live=args.live, source_ids=source_ids, as_of=as_of)
     stale_sources = update_source_health(config, research_stats)
     events, merge_stats = merge_events(load_events(config), candidates, config.city_scope, config.scoring)
     write_events(config, events)
@@ -107,6 +110,14 @@ def cmd_render(args: argparse.Namespace) -> int:
 def cmd_push(args: argparse.Namespace) -> int:
     config = RadarConfig.load(root_from_args(args))
     now = datetime.now(timezone.utc)
+    pull_failed = os.getenv("RADAR_GIT_PULL_FAILED") == "1"
+    if pull_failed:
+        append_jsonl(config.root / "logs/push.jsonl", {
+            "timestamp": now.isoformat(timespec="seconds"),
+            "kind": "pull_failed",
+            "status": "failed",
+            "error": "git pull --ff-only failed; using local data",
+        })
     mode = args.mode
     if args.auto:
         mode = auto_mode(now)
@@ -117,6 +128,8 @@ def cmd_push(args: argparse.Namespace) -> int:
             print("skip")
             return 0
     message = build_push_for_config(load_events(config), config, mode=mode)
+    if pull_failed:
+        message = message.rstrip() + "\n\n⚠️ 数据未更新（git pull 失败）"
     artifacts = write_push_artifacts(config, message, mode)
     result = send_via_hermes(message, config.push_target, dry_run=not args.send, output=config.root / "data/push-latest.txt", log_path=config.root / "logs/push.jsonl")
     if args.auto and result.get("status") == "sent":
@@ -137,6 +150,50 @@ def cmd_score(args: argparse.Namespace) -> int:
     render_timeline(events, config.site_path, now_iso(), config.scoring)
     print(json.dumps({"score": stats, "merge": merge_stats, "events": len(events)}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if stats.get("scoring_result") != "unavailable" else 1
+
+
+def cmd_migrate(args: argparse.Namespace) -> int:
+    config = RadarConfig.load(root_from_args(args))
+    if not args.clean_names:
+        print("radar migrate currently requires --clean-names", file=sys.stderr)
+        return 2
+    rows = read_jsonl(config.events_path)
+    migrated: list[dict[str, object]] = []
+    changes: list[dict[str, str]] = []
+    for original in rows:
+        row = dict(original)
+        old_name = str(row.get("name") or "")
+        old_city = str(row.get("city") or "")
+        new_name = clean_source_title(old_name, str(row.get("source") or ""))
+        new_city = infer_city(
+            old_name,
+            str(row.get("venue") or ""),
+            str(row.get("reason") or ""),
+            old_city,
+        )
+        row["name"] = new_name
+        row["city"] = new_city
+        migrated.append(row)
+        if (new_name, new_city) != (old_name, old_city):
+            changes.append({
+                "id": str(row.get("id") or ""),
+                "name_before": old_name,
+                "name_after": new_name,
+                "city_before": old_city,
+                "city_after": new_city,
+            })
+    if changes:
+        write_jsonl(config.events_path, migrated)
+    result = {
+        "kind": "migrate_clean_names",
+        "status": "success",
+        "event_count": len(rows),
+        "changed_count": len(changes),
+        "changes": changes,
+    }
+    append_jsonl(config.root / "logs/migrate.jsonl", {"timestamp": now_iso(), **result})
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
 
 
 def cmd_add(args: argparse.Namespace) -> int:
@@ -197,6 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--live", action="store_true", help="call the configured Responses API")
     run.add_argument("--send", action="store_true", help="send through Hermes; default is dry-run")
     run.add_argument("--sources", help="comma-separated source ids")
+    run.add_argument("--as-of", help="fixed YYYY-MM-DD anchor for deterministic fixture runs")
     run.add_argument("--push-mode", choices=["full", "delta"], default="full")
     run.set_defaults(func=cmd_run)
 
@@ -212,6 +270,10 @@ def build_parser() -> argparse.ArgumentParser:
     score = sub.add_parser("score", help="score persisted candidates")
     score.add_argument("--pending", action="store_true", help="score data/candidates-unscored.jsonl and merge it into events")
     score.set_defaults(func=cmd_score)
+
+    migrate = sub.add_parser("migrate", help="run an idempotent data migration")
+    migrate.add_argument("--clean-names", action="store_true", help="clean stored event names and re-infer cities")
+    migrate.set_defaults(func=cmd_migrate)
 
     add = sub.add_parser("add", help="manually add one event")
     add.add_argument("url")

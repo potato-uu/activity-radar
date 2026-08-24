@@ -6,6 +6,9 @@ __pycache__/
 dist/
 build/
 data/push-latest.txt
+data/push-history/*.success
+logs/*.jsonl
 .playwright-mcp/
 大正咖啡集团-*/
 .pw-browsers/
+reimbursements/

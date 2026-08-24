@@ -34,7 +34,7 @@ def test_sandbox_browser_launch_and_http_403_are_blocked():
 
 def test_fixture_run_produces_timeline_and_events(tmp_path, capsys):
     root = isolated_root(tmp_path)
-    assert main(["--root", str(root), "run", "--fixture", str(root / "fixtures/sample_candidates.json")]) == 0
+    assert main(["--root", str(root), "run", "--fixture", str(root / "fixtures/sample_candidates.json"), "--as-of", "2027-08-18"]) == 0
     rows = read_jsonl(root / "data/events.jsonl")
     # H2: candidates whose parsed start date is before today are excluded before scoring.
     assert len(rows) == 15
@@ -75,6 +75,7 @@ def test_live_discovery_runs_sources_concurrently_and_classifies_timeout(tmp_pat
     lock = threading.Lock()
     seen_timeouts = []
     seen_retries = []
+    seen_prompts = []
 
     class FakeClient:
         def __init__(self, base_url, model, client_root, timeout=180):
@@ -82,6 +83,7 @@ def test_live_discovery_runs_sources_concurrently_and_classifies_timeout(tmp_pat
 
         def request(self, prompt, *, web_search=True, retries=3):
             seen_retries.append(retries)
+            seen_prompts.append(prompt)
             with lock:
                 state["active"] += 1
                 state["max_active"] = max(state["max_active"], state["active"])
@@ -94,7 +96,7 @@ def test_live_discovery_runs_sources_concurrently_and_classifies_timeout(tmp_pat
             return "[]", Usage()
 
     monkeypatch.setattr("activity_radar.research.OpenAIResponsesClient", FakeClient)
-    events, stats = discover_and_score(config, live=True)
+    events, stats = discover_and_score(config, live=True, as_of=date(2027, 5, 4))
 
     assert events == []
     assert stats["source_errors"] == ["huodongxing"]
@@ -102,6 +104,7 @@ def test_live_discovery_runs_sources_concurrently_and_classifies_timeout(tmp_pat
     assert state["max_active"] == 2
     assert seen_timeouts == [222, 222]
     assert seen_retries == [1, 1]
+    assert all("今天是 2027-05-04" in prompt for prompt in seen_prompts)
 
 
 def test_source_timeout_does_not_count_as_no_hit(tmp_path):
@@ -333,6 +336,20 @@ def test_timeline_renders_v2_filters_and_event_badges(tmp_path):
     assert "系列" in html
     assert "related_to" in html
     assert "needs_review" in html
+
+
+def test_timeline_omits_cancelled_events(tmp_path):
+    output = tmp_path / "site/index.html"
+    active = Event(id="active", name="Active Summit", date_start="2026-09-01", city="上海", tier="B", acquisition_score=6, ecosystem_score=5, reason="active", url="https://example.com/active")
+    cancelled = Event(id="cancelled", name="Cancelled Summit", date_start="2026-09-02", city="上海", tier="A", acquisition_score=8, ecosystem_score=8, reason="cancelled", url="https://example.com/cancelled", status="cancelled")
+    archived_d = Event(id="archived-d", name="Archived D Meetup", date_start="2026-09-03", city="上海", tier="D", acquisition_score=3, ecosystem_score=2, reason="archived", url="https://example.com/archived")
+
+    render_timeline([active, cancelled, archived_d], output, "2026-08-18T00:00:00+00:00")
+
+    page = output.read_text(encoding="utf-8")
+    assert "Active Summit" in page
+    assert "Cancelled Summit" not in page
+    assert "Archived D Meetup" not in page
 
 
 def test_live_source_backtest_uses_adapter_window(tmp_path, monkeypatch, capsys):

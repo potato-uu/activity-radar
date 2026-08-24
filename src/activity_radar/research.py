@@ -146,23 +146,29 @@ def _persist_candidate_files(config: RadarConfig, candidates: list[dict[str, Any
 def _score_and_prepare(
     config: RadarConfig, candidates: list[dict[str, Any]], now: str, *, latest_candidates: list[dict[str, Any]] | None = None
 ) -> tuple[list[Event], str, str, int, list[dict[str, Any]]]:
+    current_keys = {_candidate_key(row) for row in candidates}
+    carried_pending = [
+        row for row in read_jsonl(config.root / "data/candidates-unscored.jsonl")
+        if _candidate_key(row) not in current_keys
+    ]
     # Persist all rows as pending before network scoring so an interrupted run is resumable.
-    _persist_candidate_files(config, latest_candidates or candidates, candidates)
+    _persist_candidate_files(config, latest_candidates or candidates, carried_pending + candidates)
     if not candidates:
-        return [], "empty", "", 0, []
+        return [], "partial" if carried_pending else "empty", "", len(carried_pending), []
     scored, pending, failures = _score_candidates_in_batches(config, candidates)
-    _persist_candidate_files(config, latest_candidates or candidates, pending)
+    remaining = carried_pending + pending
+    _persist_candidate_files(config, latest_candidates or candidates, remaining)
     if failures and not scored:
         result = "unavailable"
         error = failures[0]["error"]
-    elif failures or pending:
+    elif failures or remaining:
         result = "partial"
-        error = f"{len(failures)} scoring batch(es) failed; {len(pending)} candidate(s) remain pending"
+        error = f"{len(failures)} scoring batch(es) failed; {len(remaining)} candidate(s) remain pending"
     else:
         result = "hit"
         error = ""
     events = [prepare_event(item, item.get("source", "unknown"), now, config.scoring) for item in scored]
-    return events, result, error, len(pending), failures
+    return events, result, error, len(remaining), failures
 
 
 def score_pending_candidates(config: RadarConfig) -> tuple[list[Event], dict[str, Any]]:
@@ -331,7 +337,7 @@ def discover_and_score(
     max_workers = min(config.discovery_concurrency, max(1, source_count))
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="radar-source") as pool:
         futures = {
-            source["id"]: pool.submit(_discover_source, config, source, date.today())
+            source["id"]: pool.submit(_discover_source, config, source, window_start)
             for source in llm_sources
         }
         for source in llm_sources:

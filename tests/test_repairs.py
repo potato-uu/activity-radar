@@ -105,6 +105,20 @@ def test_single_poison_is_persisted_with_unscorable_reason(tmp_path, monkeypatch
     assert pending[0]["unscorable_reason"] == "504 timed out"
 
 
+def test_new_scoring_run_preserves_older_pending_candidates(tmp_path, monkeypatch):
+    config = RadarConfig.load(isolated_root(tmp_path))
+    old = {"name": "Older Pending Summit", "date_start": "2026-09-01", "url": "https://e/old", "source": "test", "fetched_at": "old"}
+    current = {"name": "Current Summit", "date_start": "2026-09-02", "url": "https://e/current", "source": "test", "fetched_at": "current"}
+    (config.root / "data/candidates-unscored.jsonl").write_text(json.dumps(old) + "\n", encoding="utf-8")
+    monkeypatch.setattr("activity_radar.research._score_candidates", lambda _config, batch: batch)
+
+    events, result, _error, pending_count, failures = _score_and_prepare(config, [current], "now", latest_candidates=[current])
+
+    assert [event.name for event in events] == ["Current Summit"]
+    assert result == "partial" and pending_count == 1 and failures == []
+    assert read_jsonl(config.root / "data/candidates-unscored.jsonl") == [old]
+
+
 def test_partial_scoring_response_keeps_omitted_candidate_pending(tmp_path, monkeypatch):
     root = isolated_root(tmp_path)
     config = RadarConfig.load(root)
@@ -157,7 +171,7 @@ def test_pending_cli_scores_and_merges_persisted_candidates(tmp_path, monkeypatc
 
 def test_fixture_run_persists_latest_candidates_with_source_and_fetch_time(tmp_path, capsys):
     root = isolated_root(tmp_path)
-    assert main(["--root", str(root), "run", "--fixture", str(root / "fixtures/sample_candidates.json")]) == 0
+    assert main(["--root", str(root), "run", "--fixture", str(root / "fixtures/sample_candidates.json"), "--as-of", "2027-08-18"]) == 0
     capsys.readouterr()
     rows = read_jsonl(root / "data/candidates-latest.jsonl")
     assert len(rows) == 16
@@ -319,8 +333,10 @@ def test_p4_hermes_stops_on_failed_chunk_and_logs_its_number(tmp_path, monkeypat
     # Chunk 1 succeeds; chunk 2 is retried twice before the final failure.
     assert calls == 4
     rows = read_jsonl(log)
-    assert [r["status"] for r in rows] == ["retrying", "retrying", "failed"]
-    assert all(r["chunk"] == 2 for r in rows)
+    assert [r["status"] for r in rows] == ["sent", "retrying", "retrying", "failed"]
+    assert rows[0]["chunk"] == 1
+    assert all(r["chunk"] == 2 for r in rows[1:])
+    assert len({r["message_id"] for r in rows}) == 1
 
 
 def test_p5_new_discoveries_use_previous_full_or_seven_day_fallback(tmp_path):
@@ -381,6 +397,15 @@ def test_wechat_a_reason_uses_first_sentence_and_is_at_most_40_chars(tmp_path):
     assert len(reason_line) <= 40
     assert reason_line.endswith("。")
     assert "这是第二句" not in message
+
+
+def test_wechat_reason_does_not_split_at_decimal_point(tmp_path):
+    config = RadarConfig.load(isolated_root(tmp_path))
+    event = Event(id="a", name="小数理由大会", date_start="2026-08-20", city="上海", tier="A", acquisition_score=9, ecosystem_score=8, reason="获客 3.5 分，仍值得关注。第二句。", url="https://example.com/a")
+
+    message = build_push_for_config([event], config, today=date(2026, 8, 19), mode="full")
+
+    assert "获客 3.5 分，仍值得关注。" in message
 
 
 def test_wechat_expected_series_and_review_markers(tmp_path):
@@ -504,7 +529,7 @@ def test_prefilter_drops_navigation_missing_dates_and_nonofficial_other_cities(t
         {"name": "Shanghai AI Growth Summit", "date_start": "2027-09-02", "city": "上海", "source": "onepilot"},
         {"name": "海外品牌峰会", "date_start": "2027-09-03", "city": "海外", "source": "calendar-seed"},
     ]
-    kept, counts = prefilter_candidates(rows, scoring)
+    kept, counts = prefilter_candidates(rows, scoring, today=date(2027, 8, 19))
     assert [row["name"] for row in kept] == ["Google 官方深圳开发者大会", "Shanghai AI Growth Summit"]
     assert counts == {"invalid": 2, "past": 0, "out_of_scope": 1, "overseas": 1}
 
@@ -658,6 +683,31 @@ def test_send_via_hermes_retries_rate_limited_chunk(tmp_path, monkeypatch):
     assert any(r.get("status") == "retrying" and "rate limited" in r.get("error", "") for r in rows)
 
 
+def test_send_via_hermes_does_not_retry_permanent_failure(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from activity_radar import push as push_mod
+
+    calls = {"n": 0}
+    sleeps: list[int] = []
+
+    def fake_run(cmd, **kwargs):
+        calls["n"] += 1
+        return SimpleNamespace(returncode=1, stdout="", stderr="authentication failed")
+
+    monkeypatch.setattr(push_mod.shutil, "which", lambda name: "/usr/bin/true")
+    monkeypatch.setattr(push_mod.subprocess, "run", fake_run)
+    log_path = tmp_path / "push.jsonl"
+
+    with pytest.raises(RuntimeError, match="after 1 attempts"):
+        push_mod.send_via_hermes("hello", "weixin", dry_run=False, log_path=log_path, sleep_fn=sleeps.append)
+
+    assert calls["n"] == 1
+    assert sleeps == []
+    rows = read_jsonl(log_path)
+    assert rows[-1]["status"] == "failed"
+    assert rows[-1]["attempt"] == 1
+
+
 def test_auto_mode_catches_up_later_same_day():
     """A missed exact hour still sends later the same Shanghai day."""
     late_sunday = datetime(2026, 8, 23, 15, 0, tzinfo=timezone.utc)  # 23:00 Shanghai Sunday
@@ -666,3 +716,67 @@ def test_auto_mode_catches_up_later_same_day():
     assert auto_mode(late_sunday) == "full"
     assert auto_mode(late_wednesday) == "delta"
     assert auto_mode(before_window) is None
+
+
+def test_r1_runtime_clone_recovers_artifacts_and_warns_when_pull_fails(tmp_path, monkeypatch, capsys):
+    root = isolated_root(tmp_path)
+    monkeypatch.setenv("RADAR_GIT_PULL_FAILED", "1")
+
+    assert main(["--root", str(root), "push", "--mode", "full"]) == 0
+    capsys.readouterr()
+
+    message = (root / "data/push-latest.txt").read_text(encoding="utf-8")
+    rows = read_jsonl(root / "logs/push.jsonl")
+    script = (ROOT / "scripts/push_local.sh").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/radar.yml").read_text(encoding="utf-8")
+    ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+    assert message.endswith("⚠️ 数据未更新（git pull 失败）")
+    assert any(row.get("kind") == "pull_failed" for row in rows)
+    assert script.index("git checkout -- logs data site") < script.index("git pull --ff-only")
+    assert "|| git checkout -- data site" in script
+    assert 'git add data site' in workflow
+    assert 'git add data logs site' not in workflow
+    assert "logs/*.jsonl" in ignore
+
+
+def test_r2_clean_names_migration_is_idempotent_and_preserves_scores_and_status(tmp_path, capsys):
+    root = isolated_root(tmp_path)
+    original = Event(
+        id="dirty-amz",
+        name="2026拉美跨境电商赋能大会·杭州站 2026-08-27 浙江省杭州市",
+        date_start="2026-08-27",
+        date_end="2026-08-27",
+        city="上海",
+        source="amz123",
+        url="https://www.amz123.com/hd/example",
+        acquisition_score=6,
+        ecosystem_score=4,
+        tier="B",
+        status="changed",
+        score_history=[{"timestamp": "2026-08-19T00:00:00+00:00", "acquisition_score": 6, "ecosystem_score": 4}],
+    )
+    (root / "data/events.jsonl").write_text(json.dumps(original.to_dict(), ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert main(["--root", str(root), "migrate", "--clean-names"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    migrated = read_jsonl(root / "data/events.jsonl")[0]
+    assert first["changed_count"] == 1
+    assert migrated["name"] == "2026拉美跨境电商赋能大会·杭州站"
+    assert migrated["city"] == "杭州"
+    assert migrated["acquisition_score"] == 6
+    assert migrated["ecosystem_score"] == 4
+    assert migrated["tier"] == "B"
+    assert migrated["status"] == "changed"
+    assert migrated["score_history"] == original.score_history
+
+    assert main(["--root", str(root), "migrate", "--clean-names"]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert second["changed_count"] == 0
+    logs = read_jsonl(root / "logs/migrate.jsonl")
+    assert [row["changed_count"] for row in logs] == [1, 0]
+
+
+def test_r4_private_reimbursements_directory_is_ignored():
+    ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "reimbursements/" in ignore

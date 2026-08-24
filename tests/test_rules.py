@@ -22,6 +22,19 @@ def test_same_event_repeated_run_is_unchanged():
     assert stats["new"] == 0
 
 
+def test_repeated_scoring_with_same_scores_does_not_grow_history_or_mark_changed():
+    raw = event(acquisition_score=7, ecosystem_score=5).to_dict()
+    first = prepare_event(raw, "test", "2026-08-18T00:00:00+00:00", {})
+    second = prepare_event(raw, "test", "2026-08-19T00:00:00+00:00", {})
+
+    merged, stats = merge_events([first], [second], {"上海"}, {})
+
+    assert stats["unchanged"] == 1
+    assert stats["changed"] == 0
+    assert merged[0].status == "active"
+    assert merged[0].score_history == first.score_history
+
+
 def test_changed_date_marks_changed():
     first = event()
     second = event(date_start="2026-09-15", date_end="2026-09-15")
@@ -55,6 +68,36 @@ def test_series_occurrences_are_merged_into_one_event():
     assert stats["new"] == 1
     assert merged[0].metadata["is_series"] is True
     assert merged[0].metadata["occurrences"] == ["2026-09-01", "2026-09-08"]
+
+
+def test_r3_coffeechat_issue_numbers_merge_across_runs_without_losing_occurrences():
+    scoring = {"corrections": {"small_open": -2, "small_open_salon_cap": 7}}
+    first_run = [
+        event("一人公司 Coffeechat 157期", "2026-08-22", event_type="沙龙·meetup", format="open", scale_hint="small_salon"),
+        event("一人公司 Coffeechat 158期", "2026-08-23", event_type="沙龙·meetup", format="open", scale_hint="small_salon"),
+    ]
+    second_run = [
+        event("一人公司 Coffeechat 159期", "2026-08-29", event_type="沙龙·meetup", format="open", scale_hint="small_salon"),
+        event("一人公司 Coffeechat 160期", "2026-08-30", event_type="沙龙·meetup", format="open", scale_hint="small_salon"),
+    ]
+
+    merged, _ = merge_events([], first_run, {"上海"}, scoring)
+    merged, _ = merge_events(merged, second_run, {"上海"}, scoring)
+
+    assert normalize_name("一人公司 Coffeechat 160期") == "一人公司coffeechat"
+    assert len(merged) == 1
+    assert merged[0].is_series is True
+    assert merged[0].occurrences == ["2026-08-22", "2026-08-23", "2026-08-29", "2026-08-30"]
+    scored = prepare_event(
+        event("一人公司 Coffeechat 160期", "2026-08-30", event_type="沙龙·meetup", format="open", scale_hint="small_salon", acquisition_score=6, ecosystem_score=2).to_dict(),
+        "onepilot",
+        "2026-08-23T00:00:00+00:00",
+        scoring,
+    )
+    assert (scored.acquisition_score, scored.ecosystem_score, scored.tier) == (4, 0, "D")
+    archived, _ = merge_events([scored], [], {"上海"}, scoring)
+    assert len(archived) == 1
+    assert archived[0].tier == "D"
 
 
 def test_existing_same_name_multiple_dates_are_collapsed_without_new_candidates():
@@ -93,6 +136,18 @@ def test_city_correction_and_other_city_push_boundary():
     assert (nearby.acquisition_score, nearby.ecosystem_score) == (7, 6)
     assert (other.acquisition_score, other.ecosystem_score) == (7, 5)
     assert other.metadata["web_only"] is True
+
+
+def test_score_corrections_record_raw_applied_and_final_values():
+    raw = event(city="杭州", audience_side="supply", scale_hint="small", format="open", acquisition_score=9, ecosystem_score=8).to_dict()
+
+    prepared = prepare_event(raw, "test", "2026-08-23T00:00:00+00:00", {})
+
+    assert prepared.metadata["score_audit"] == {
+        "raw": {"acquisition_score": 9.0, "ecosystem_score": 8.0},
+        "applied": ["supply_acquisition_cap", "small_open", "nearby_city"],
+        "final": {"acquisition_score": 1.0, "ecosystem_score": 5.0},
+    }
 
 
 def test_score_history_marks_large_adjacent_change_for_review():

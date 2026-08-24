@@ -139,7 +139,7 @@ def _has_explicit_year(text: str) -> bool:
     return bool(re.search(r"20\d{2}(?:年\d{1,2}月\d{1,2}日?|[./-]\d{1,2}[./-]\d{1,2})", text or ""))
 
 
-def _clean_source_title(title: str, source_id: str) -> str:
+def clean_source_title(title: str, source_id: str) -> str:
     """Remove AMZ123 card suffixes while retaining the actual event name."""
     value = re.sub(r"\s+", " ", str(title or "")).strip()
     if source_id != "amz123":
@@ -172,7 +172,7 @@ def normalize_raw_candidate(raw: RawCandidate, anchor: date) -> dict[str, Any]:
     parsed_start, parsed_end, parsed_precision = parse_date_text(date_text, anchor)
     if _has_explicit_year(date_text) or not start:
         start, end, precision = parsed_start, parsed_end, parsed_precision
-    name = _clean_source_title(raw.raw_title, raw.source_id)
+    name = clean_source_title(raw.raw_title, raw.source_id)
     metadata = dict(raw.metadata)
     if re.search(r"(?i)\bvol\.?\s*\d+\b|第\s*\d+\s*期|每周|每月", raw.raw_title):
         metadata["series_hint"] = True
@@ -197,7 +197,7 @@ def normalize_raw_candidate(raw: RawCandidate, anchor: date) -> dict[str, Any]:
 def normalize_candidate_row(row: dict[str, Any], anchor: date) -> dict[str, Any]:
     item = dict(row)
     original_name = str(item.get("name") or item.get("raw_title") or "")
-    item["name"] = _clean_source_title(original_name, str(item.get("source") or item.get("source_id") or ""))
+    item["name"] = clean_source_title(original_name, str(item.get("source") or item.get("source_id") or ""))
     start = str(item.get("date_start") or "")
     end = str(item.get("date_end") or start)
     precision = str(item.get("date_precision") or ("day" if start else "unknown"))

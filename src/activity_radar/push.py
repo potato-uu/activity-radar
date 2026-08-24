@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import shutil
 import subprocess
 import re
@@ -138,7 +139,7 @@ def _reason_text(reason: str) -> str:
     text = " ".join(part.strip() for part in str(reason or "").splitlines() if part.strip())
     if not text:
         return "理由待补充。"
-    first = re.split(r"[。！？!?\.]", text, maxsplit=1)[0].strip()
+    first = re.split(r"[。！？!?]|(?<!\d)\.(?=\s|$)", text, maxsplit=1)[0].strip()
     body = first.rstrip("。！？!?.,，；; ") or "理由待补充"
     if len(body) >= 40:
         clipped = body[:39]
@@ -150,6 +151,11 @@ def _reason_text(reason: str) -> str:
 def _link_line(event: Event) -> str:
     url = str(event.url or "").strip()
     return f"🔗 {url}" if url.lower().startswith(("http://", "https://")) else ""
+
+
+def _is_rate_limit_error(error_text: str) -> bool:
+    value = error_text.lower()
+    return any(marker in value for marker in ("rate limit", "rate_limit", "cooldown", "too many requests", "429"))
 
 
 def _number_label(index: int) -> str:
@@ -412,33 +418,51 @@ def send_via_hermes(
             append_jsonl(log_path, {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), "status": "failed", "target": target, "chars": len(message), "error": error})
         raise RuntimeError(error)
     chunks = split_message(message)
+    message_id = hashlib.sha256(message.encode("utf-8")).hexdigest()[:16]
     sleep_fn = sleep_fn or time.sleep
     for index, chunk in enumerate(chunks, 1):
-        # iLink rate-limits bursts of consecutive messages; retry a failed chunk
-        # after progressively longer cooldowns before giving up.
+        # iLink rate-limits bursts of consecutive messages. Permanent failures
+        # must fail immediately instead of sleeping through the retry window.
         for attempt, cooldown in enumerate((120, 300, None)):
             result = subprocess.run([executable, "send", "--to", target, "--file", "-", "--json"], input=chunk, text=True, capture_output=True, check=False)
             if result.returncode == 0:
                 break
             error_text = (result.stderr.strip() or result.stdout.strip())[:500]
+            retry_cooldown = cooldown if _is_rate_limit_error(error_text) else None
             if log_path:
                 append_jsonl(log_path, {
                     "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                    "status": "retrying" if cooldown else "failed",
+                    "kind": "chunk_delivery",
+                    "status": "retrying" if retry_cooldown else "failed",
+                    "message_id": message_id,
                     "target": target,
                     "chars": len(message),
+                    "chunk_chars": len(chunk),
                     "chunk": index,
                     "chunk_count": len(chunks),
                     "attempt": attempt + 1,
                     "returncode": result.returncode,
                     "error": error_text,
                 })
-            if cooldown is None:
+            if retry_cooldown is None:
                 raise RuntimeError(f"Hermes send failed ({result.returncode}) on chunk {index}/{len(chunks)} after {attempt + 1} attempts: {error_text}")
-            sleep_fn(cooldown)
+            sleep_fn(retry_cooldown)
+        if log_path:
+            append_jsonl(log_path, {
+                "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "kind": "chunk_delivery",
+                "status": "sent",
+                "message_id": message_id,
+                "target": target,
+                "chars": len(message),
+                "chunk_chars": len(chunk),
+                "chunk": index,
+                "chunk_count": len(chunks),
+                "attempt": attempt + 1,
+            })
         if index < len(chunks):
             sleep_fn(45)
-    response = {"status": "sent", "target": target, "chars": len(message), "chunks": len(chunks), "chunk_chars": [len(chunk) for chunk in chunks], "result": result.stdout.strip()}
+    response = {"status": "sent", "message_id": message_id, "target": target, "chars": len(message), "chunks": len(chunks), "chunk_chars": [len(chunk) for chunk in chunks], "result": result.stdout.strip()}
     if log_path:
         append_jsonl(log_path, {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **response})
     return response

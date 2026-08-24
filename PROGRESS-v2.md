@@ -411,3 +411,102 @@ PYTHONPATH=src .venv/bin/python -m activity_radar.cli push --mode delta
 - 无阻塞项，无未满足的 §13 关键格式项。
 - 按 §2/§8 未联网、未抓网页、未启动 Chromium、未外发、未读取或打印密钥，未做任何 git 写操作。
 - `BRIEF-v2-2026-08-18.md`、`data/push-history/20260820T033628Z-full.txt` 与本轮开始前已有的 `logs/push.jsonl` 改动未回退；只在后者追加了本轮 dry-run 记录。
+
+## 2026-08-23 08:35 PDT - 全流程审阅轮进行中
+
+- 已完整读取 `BRIEF-v2-2026-08-18.md` §14，并复核 §2 禁区与 §8 沙箱约束。
+- 执行顺序锁定为 R1→R2→R3→R4（每条先复现、再最小修复、后定向单测），随后执行 P1 七项消费者视角审阅。
+- 边界：不做 git 写操作、不外发、不启动 Chromium、不抓网页、不读取或打印密钥、不修改 `~/.local/share/activity-radar` 运行克隆。
+- 工作区起点：`BRIEF-v2-2026-08-18.md` 是 Stan 已有改动，`reimbursements/` 是私人未跟踪目录；均保留，R4 只增加忽略规则。
+
+### 2026-08-23 08:49 PDT - R1–R4 定向修复完成
+
+- 基线：`PYTHONPATH=src .venv/bin/python -m pytest --override-ini addopts= -q` → `85 passed in 0.95s`；该结果不覆盖 R1–R4。
+- RED：新增四条定向回归后首跑 → `4 failed`，分别证明 pull 失败无警告/无可观测日志、缺少 `migrate` 子命令、裸 `160期` 未归一化、`reimbursements/` 未忽略。
+- R1：`scripts/push_local.sh` 在 pull 前恢复跟踪的 `logs data site`；pull 失败通过 `RADAR_GIT_PULL_FAILED=1` 传入 CLI，`logs/push.jsonl` 写 `kind=pull_failed`，推送文案末尾加“⚠️ 数据未更新（git pull 失败）”。Actions 改为 `git add data site`；`.gitignore` 新增 `logs/*.jsonl` 与本地 `.success` 标记。
+- R2：新增幂等 `radar migrate --clean-names`，只改存量事件的 `name/city`，不动分数、Tier、status 或 `score_history`；记录到 `logs/migrate.jsonl`。
+- R3：根因有三层：`normalize_name()` 未剔除“160期”这种无“第”前缀的期数；跨运行合并会丢旧 occurrences；文本型 `small/small_salon/small_open` 未触发“小型公开双线 -2”。早先“6/2/B 符合封顶 7”的判断不完整，深审后已纠正为 4/0/D，并按本地已提交候选证据恢复 157–160 四个日期。
+- R4：`.gitignore` 已加 `reimbursements/`，未读取或改动该私人目录内容。
+- GREEN：四条定向测试 → `4 passed in 0.17s`。
+
+## 全流程审阅轮 Report
+
+时间：2026-08-23 18:07 PDT
+终态：`completed`（按 §14 完成 R1–R4 修复、P1 七项审阅和本地 dry-run；P1 指定“大问题先不动”的残余风险已明确列出）
+
+### 结论（按严重度）
+
+- Critical：无未修 Critical。
+- Important：仍有 4 个设计风险，均属于 §14 指定的“写清但先不动”：研究完成与本机推送之间没有新鲜度握手；分块发送失败后没有 durable outbox/续传游标；`merge_events()` 仍会删除 invalid/out-of-scope 旧记录；运行克隆不会随 `pyproject.toml` 自动更新 `.venv`。
+- Moderate / Unknown：真实 iLink 小时级频控下 45/120/300 秒策略的成功率无本轮实发证据；旧事件没有 raw score，周边 -1 与小型公开 -2 无法逐条追溯。新事件已写 `metadata.score_audit`，但不伪造回填旧数据。
+- 本轮额外修复的 P1 小问题：同分重复运行不再膨胀 `score_history`；旧 pending 不再被新研究覆盖；网页隐藏 cancelled/D；`_reason_text` 不误切 `3.5`；Hermes 只重试明确频控错误；分块日志可重建部分发送状态；`--as-of` 对 direct/fixture/LLM source 全部生效。
+
+### R1–R4
+
+| 项 | 状态 | 证据与结果 |
+|---|---|---|
+| R1 运行克隆脏拉取 | Passed | `scripts/push_local.sh` pull 前执行 §14 指定 checkout；考虑 logs 解绑后 pathspec 不存在，增加 `data site` fallback。pull 失败设置 `RADAR_GIT_PULL_FAILED=1`，`logs/push.jsonl` 写 `kind=pull_failed`，消息末尾追加“⚠️ 数据未更新（git pull 失败）”。Actions 只 `git add data site`；`.success` 被忽略。`test_r1_runtime_clone_recovers_artifacts_and_warns_when_pull_fails` 通过。 |
+| R2 存量名称清洗 | Passed | `radar migrate --clean-names` 首跑 41→41、changed=1：`2026拉美跨境电商赋能大会·杭州站 2026-08-27 浙江省杭州市` → `2026拉美跨境电商赋能大会·杭州站`；city/分数/Tier/status/history 不变。二跑 changed=0，日志分别在 2026-08-23T15:49:05Z、2026-08-24T01:06:08Z。 |
+| R3 系列/小局 | Passed | 本地 `a7fbe592...:data/candidates-latest.jsonl` 证明 157/158/159/160 期日期为 8/22、8/23、8/29、8/30。规则剥离裸 `160期`、跨运行保留 occurrences、文本 small 触发 -2。当前 `evt-b9416394721e` 为 1 条四日期系列，raw 6/2 → final 4/0、Tier D；仍在 41 条归档中，但不进推送/网页。真实数据回归与 D 归档测试通过。 |
+| R4 私人目录 | Passed | `.gitignore` 包含 `reimbursements/`；未读取、未修改该目录内容。 |
+
+### P1 七项
+
+| # | 状态 / 严重度 | 审阅结论 | 建议 |
+|---|---|---|---|
+| 1 调度 | 问题 / Important | §14 的“周日/周三 08:00”前提与实际 workflow 不一致：周日是 16:00 SH，周三是 08:00 SH；两者到本机 18:05/10:05 都有 125 分钟，90 分钟 job timeout 在不排队时留 35 分钟缓冲。但本机只做 `git pull`，无法证明当次 Actions 已完成；一旦 GitHub 排队，第一次 pull 会推旧数据，成功 marker 又阻止当日晚些时候补发。 | 不先改 cron；Actions commit 写 `research_finished_at/run_id/source_commit`，本机发送前校验同一上海日期的新鲜度。不满足则 fail closed 并告警，不写 success。 |
+| 2 `push --auto` | 核心 Passed；部分失败 / Important | mode 和 marker 日期都使用发送开始时捕获的 `now`，周日 23:59 跨到周一仍写周日 marker；marker 只在整条 `send_via_hermes` 返回 sent 后写，失败不误标。缺口：前块已发、后块失败时无 marker，下一小时从第 1 块重发；全部发完到 marker 落盘之间崩溃也会重复。 | durable outbox 保存 `message_id + next_chunk`，每块成功原子推进游标；完整完成后再写日 marker。 |
+| 3 发送链路 | 部分 Passed / Important + Unknown | `（i/N）` 是块内容的一部分，重试内容稳定；每次 chunk 写 `message_id/chunk/chunk_count/attempt/status`，现在可判断已发/未发。永久错误已改为立即失败，只有 `rate limit/rate_limit/cooldown/too many requests/429` 走 120/300 秒。真实小时级频控存活率 Unknown；45 秒块间隔和最多 7 分钟单块冷却不是成功保证，`subprocess.run` 也没有 timeout。 | 先实现 outbox；再用 3 次真实受控发送统计频控窗口，决定间隔。给 Hermes subprocess 增加有证据的超时上限。 |
+| 4 数据层 | 问题 / Important | R3 后 existing D 保留且消费者隐藏；但 `merge_events()` 仍跳过 invalid/out-of-scope 旧记录，违反 `events.jsonl` 只增不删。相同分数/仅时间戳的重复运行不再追加 history；真实变化仍无上限，当前最大 11。`candidates-latest` 是覆盖式当次快照；旧 `unscored` 已跨运行保留，当前 latest=123、unscored=0，但没有 TTL/归档策略。 | 将 events 改成 append/update + `status/rejection_reason`，展示层过滤；给 score history 定上限或拆审计日志；pending 增加过期清理及 tombstone。 |
+| 5 评分抽查 | 部分 Passed / Moderate | 10 条抽查见下表。供给侧/培训/沙龙上限可从 final 核对；旧数据没有 raw score，周边 -1、小型 -2、邀约 -1 只能判断“结果相容”，不能证明实际执行。未来由 `score_audit.raw/applied/final` 提供证据。 | 不回填猜测值；下一次真实评分后按 audit 抽查，再决定是否迁移旧分。 |
+| 6 Claude 内联改动 | Passed，保留上述大风险 | `_reason_text` 已修复小数点边界；Hermes 重试只针对频控并记录块状态；`auto_mode >=` 的同日补发和 marker 测试通过；fixture 与 LLM source 的 `--as-of` 均已稳定。`auto_mode >=` 本身合理，但不能替代第 1 项的新鲜度握手，也不能解决第 2 项部分发送续传。 | 保留 catch-up；把新鲜度和 outbox 作为独立门，不继续往 `auto_mode` 塞隐式条件。 |
+| 7 运行克隆 | 问题 / Important | 代码可由 ff-only pull 同步，tracked data/site 可恢复，untracked success marker 保留；但 dev/clone 两份状态没有代码 SHA/研究完成握手，且 clone `.venv` 不会因 `pyproject.toml` 变化自动安装。源代码本地改动也会让 pull 失败后继续用旧代码。 | wrapper 记录/校验 checkout SHA、研究完成时间和依赖锁文件 hash；依赖 hash 变化时执行受控安装，失败则不发送。 |
+
+### 评分 10 条抽查
+
+| 事件 | 规则 | 当前结果 | 判定 |
+|---|---|---|---|
+| 2026云栖大会 | supply cap + 杭州 -1 | 3/8 | 上限相容；raw 未保存，-1 未证实 |
+| Google Devfest 上海 | supply cap | 3/8 | Passed（获客 ≤4） |
+| 第28届上海国际广告展 | supply cap | 4/4 | Passed（获客 =4） |
+| 华为全联接大会 | supply cap | 2/8 | Passed（获客 ≤4） |
+| 百度 AI 办公智能体实训营 | training cap | 3/7 | Passed（获客 =3） |
+| 徐汇滨江 AI 出海 Drink Chat | small/open + salon cap | 7/4 | cap Passed；-2 因无 raw 未证实 |
+| AI+生态招商沙龙 | small_open + salon cap | 7/4 | cap Passed；-2 因无 raw 未证实 |
+| 一人公司 Coffeechat | small_open | raw 6/2 → 4/0 | Passed；`score_audit` 可追溯 |
+| 2026杭州出口跨境电商博览会 | 杭州 -1 | 7/5 | 结果相容；raw 未保存，未证实 |
+| 世界互联网大会乌镇峰会 | 嘉兴 -1 + invite_only -1 | 4/6 | 结果相容；raw 未保存，未证实 |
+
+### 验证与样张
+
+| 检查 | 状态 | 实际结果 |
+|---|---|---|
+| 全套单测 | Passed | `PYTHONPATH=src .venv/bin/python -m pytest --override-ini addopts= -q` → `95 passed in 0.93s`。 |
+| R1–R4/P1 定向回归 | Passed | R1–R4 + D 展示为 5 passed；as-of/重试为 4 passed；R1 fallback 单测 1 passed。 |
+| 编译 | Passed | `.venv/bin/python -m compileall -q src tests`，exit 0。 |
+| plist / shell | Passed | `plutil -lint` → OK；`push_local.sh`、install、uninstall 三份 zsh 脚本 `zsh -n` exit 0。 |
+| diff | Passed | `git diff --check` exit 0。 |
+| full dry-run | Passed | `data/push-history/20260824T010507Z-full.txt`：3151 字、2 块，含前缀长度 1392/1769。 |
+| delta dry-run | Passed | `data/push-history/20260824T010517Z-delta.txt`：100 字、1 块，含前缀长度 106。 |
+| 当前归档 | Passed | 41 行、41 个唯一 id；Coffeechat 四日期 D 仍归档，推送与 `site/index.html` 均不展示。 |
+
+### 外层提交清单
+
+- 代码/调度：`.github/workflows/radar.yml`、`.gitignore`、`scripts/push_local.sh`、`src/activity_radar/cli.py`、`normalization.py`、`push.py`、`render.py`、`research.py`、`rules.py`。
+- 测试：`tests/test_pipeline.py`、`tests/test_repairs.py`、`tests/test_rules.py`。
+- 数据/产物：`data/events.jsonl`、`site/index.html`、上述 20260824 full/delta 两份样张、`PROGRESS-v2.md`。
+- Stan 已有输入：`BRIEF-v2-2026-08-18.md` 的 §14 改动本轮只读保留；是否与本轮一起提交由外层决定。
+- 日志退出跟踪面（当前 `git ls-files` 仍能看到两文件，外层必须执行）：
+
+```bash
+git rm --cached logs/run.jsonl logs/push.jsonl
+```
+
+- 建议提交信息：`fix: harden activity radar end-to-end flow`。
+- 不提交：`logs/migrate.jsonl`、本轮追加的 `logs/push.jsonl` 内容、`.success`、`reimbursements/`、`.env`、`.pw-browsers/`。
+
+### 边界与副作用
+
+- 未执行任何 git 写操作；未 add/commit/rebase/checkout/push。
+- 未外发消息；所有新样张都是 dry-run。未启动 Chromium，未抓网页，未读取/打印密钥，未修改 `~/.local/share/activity-radar` 运行克隆。
+- 本地文件副作用仅为：R2/R3 数据迁移、site/dry-run 样张重建、忽略日志追加；无外部副作用。

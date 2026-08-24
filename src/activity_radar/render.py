@@ -13,7 +13,7 @@ from .schema import Event
 def render_timeline(events: list[Event], output: Path, generated_at: str, scoring: dict[str, Any] | None = None) -> None:
     grouped: dict[str, list[Event]] = defaultdict(list)
     for event in events:
-        if not is_valid_candidate(event.to_dict(), scoring or {})[0]:
+        if event.status == "cancelled" or event.tier == "D" or not is_valid_candidate(event.to_dict(), scoring or {})[0]:
             continue
         grouped[(event.date_start or "未定")[:7]].append(event)
     cards: list[str] = []
