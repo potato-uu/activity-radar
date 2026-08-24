@@ -1,5 +1,8 @@
+import hashlib
 import json
+import os
 import shutil
+import subprocess
 import threading
 import time
 from datetime import date, datetime, timezone
@@ -8,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from activity_radar import push as push_mod
 from activity_radar.adapters.generic import extract_html_candidates
 from activity_radar.cli import main, update_source_health
 from activity_radar.config import RadarConfig
@@ -780,3 +784,329 @@ def test_r2_clean_names_migration_is_idempotent_and_preserves_scores_and_status(
 def test_r4_private_reimbursements_directory_is_ignored():
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert "reimbursements/" in ignore
+
+
+def test_s1_fresh_research_allows_auto_push(tmp_path):
+    root = isolated_root(tmp_path)
+    config = RadarConfig.load(root)
+    (root / "data/research-meta.json").write_text(
+        json.dumps({"completed_at": "2026-08-23T09:30:00Z", "git_sha": "abc", "event_count": 2, "mode": "full"}),
+        encoding="utf-8",
+    )
+
+    status, warning = push_mod.research_freshness(config, datetime(2026, 8, 23, 10, 30, tzinfo=timezone.utc), "full")
+
+    assert status == "fresh"
+    assert warning is None
+
+
+def test_s1_stale_research_waits_before_cutoff_and_logs_skip(tmp_path, monkeypatch, capsys):
+    root = isolated_root(tmp_path)
+    (root / "data/research-meta.json").write_text(
+        json.dumps({"completed_at": "2026-08-22T08:00:00Z", "git_sha": "abc", "event_count": 2, "mode": "full"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("activity_radar.cli._utc_now", lambda: datetime(2026, 8, 23, 10, 30, tzinfo=timezone.utc))
+
+    assert main(["--root", str(root), "push", "--auto"]) == 0
+
+    assert capsys.readouterr().out.strip() == "skip"
+    row = read_jsonl(root / "logs/push.jsonl")[-1]
+    assert row["kind"] == "auto_skip"
+    assert row["reason"] == "waiting_fresh_data"
+
+
+def test_s1_stale_research_sends_after_cutoff_with_dated_warning(tmp_path, monkeypatch):
+    root = isolated_root(tmp_path)
+    (root / "data/research-meta.json").write_text(
+        json.dumps({"completed_at": "2026-08-22T08:00:00Z", "git_sha": "abc", "event_count": 2, "mode": "full"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("activity_radar.cli._utc_now", lambda: datetime(2026, 8, 23, 14, 30, tzinfo=timezone.utc))
+
+    assert main(["--root", str(root), "push", "--auto"]) == 0
+
+    message = (root / "data/push-latest.txt").read_text(encoding="utf-8")
+    assert message.endswith("⚠️ 数据为 8/22 研究结果（今日研究未完成）")
+
+
+def test_s1_missing_research_meta_never_invents_a_research_date(tmp_path):
+    config = RadarConfig.load(isolated_root(tmp_path))
+
+    status, warning = push_mod.research_freshness(config, datetime(2026, 8, 23, 14, 30, tzinfo=timezone.utc), "full")
+
+    assert status == "stale"
+    assert warning == "⚠️ 未找到研究结果日期（今日研究未完成）"
+
+
+def test_s1_live_run_writes_research_meta_with_read_only_git_sha(tmp_path, monkeypatch, capsys):
+    root = isolated_root(tmp_path)
+    stats = {"source_ids": [], "source_hits": [], "source_errors": [], "source_error_details": {}}
+    monkeypatch.setattr("activity_radar.cli.discover_and_score", lambda *args, **kwargs: ([], stats))
+    monkeypatch.setattr("activity_radar.cli.render_timeline", lambda *args, **kwargs: None)
+    monkeypatch.setattr("activity_radar.cli.build_push_for_config", lambda *args, **kwargs: "sample")
+    monkeypatch.setattr("activity_radar.cli.write_push_artifacts", lambda *args, **kwargs: {})
+    monkeypatch.setattr("activity_radar.cli.send_via_hermes", lambda *args, **kwargs: {"status": "dry_run"})
+    monkeypatch.setattr("activity_radar.cli._read_git_sha", lambda _root: "abc123")
+    monkeypatch.setattr("activity_radar.cli._utc_now", lambda: datetime(2026, 8, 23, 9, 45, tzinfo=timezone.utc))
+
+    assert main(["--root", str(root), "run", "--live", "--push-mode", "delta"]) == 0
+    capsys.readouterr()
+
+    assert read_json(root / "data/research-meta.json", {}) == {
+        "completed_at": "2026-08-23T09:45:00+00:00",
+        "git_sha": "abc123",
+        "event_count": 0,
+        "mode": "delta",
+    }
+
+
+def test_s2_failed_send_persists_outbox_with_sent_message_id(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    message = "A" * 1700 + "\n\n" + "B" * 1700 + "\n\n" + "C" * 1700
+    outbox = tmp_path / "data/push-history/2026-08-23-full.outbox.json"
+    marker = tmp_path / "data/push-history/2026-08-23-full.success"
+    calls = 0
+
+    def fake_run(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(returncode=0 if calls == 1 else 1, stdout="ok" if calls == 1 else "", stderr="authentication failed" if calls > 1 else "")
+
+    monkeypatch.setattr(push_mod.shutil, "which", lambda _name: "/fake/hermes")
+    monkeypatch.setattr(push_mod.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="chunk 2/"):
+        send_via_hermes(
+            message,
+            "weixin",
+            dry_run=False,
+            outbox_path=outbox,
+            success_marker=marker,
+            sleep_fn=lambda _seconds: None,
+        )
+
+    saved = read_json(outbox, {})
+    assert saved["chunks"] == split_message(message)
+    assert list(saved["sent"]) == ["1"]
+    assert saved["sent"]["1"]
+    assert saved["created_at"]
+    assert marker.exists() is False
+
+
+def test_s2_resume_prefers_saved_chunks_then_cleans_outbox_and_marks_success(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    outbox = tmp_path / "data/push-history/2026-08-23-full.outbox.json"
+    marker = tmp_path / "data/push-history/2026-08-23-full.success"
+    chunks = ["（1/3）\nsaved one", "（2/3）\nsaved two", "（3/3）\nsaved three"]
+    outbox.parent.mkdir(parents=True)
+    outbox.write_text(json.dumps({"chunks": chunks, "sent": {"1": "saved-message-id"}, "created_at": "2026-08-23T10:00:00+00:00"}), encoding="utf-8")
+    sent: list[str] = []
+
+    def fake_run(*_args, **kwargs):
+        sent.append(kwargs["input"])
+        return SimpleNamespace(returncode=0, stdout='{"success": true}', stderr="")
+
+    monkeypatch.setattr(push_mod.shutil, "which", lambda _name: "/fake/hermes")
+    monkeypatch.setattr(push_mod.subprocess, "run", fake_run)
+
+    result = send_via_hermes(
+        "conflicting newly generated message",
+        "weixin",
+        dry_run=False,
+        outbox_path=outbox,
+        success_marker=marker,
+        sleep_fn=lambda _seconds: None,
+    )
+
+    assert sent == chunks[1:]
+    assert result["message_id"] == "saved-message-id"
+    assert marker.exists()
+    assert outbox.exists() is False
+
+
+def test_s2_auto_push_resumes_outbox_before_freshness_gate(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    root = isolated_root(tmp_path)
+    outbox = root / "data/push-history/2026-08-23-full.outbox.json"
+    outbox.parent.mkdir(parents=True)
+    saved_chunk = "（1/1）\nold stable content"
+    outbox.write_text(json.dumps({"chunks": [saved_chunk], "sent": {}, "created_at": "2026-08-23T10:00:00+00:00"}), encoding="utf-8")
+    sent: list[str] = []
+
+    monkeypatch.setattr("activity_radar.cli._utc_now", lambda: datetime(2026, 8, 23, 10, 30, tzinfo=timezone.utc))
+    monkeypatch.setattr(push_mod.shutil, "which", lambda _name: "/fake/hermes")
+    monkeypatch.setattr(push_mod.subprocess, "run", lambda *_args, **kwargs: sent.append(kwargs["input"]) or SimpleNamespace(returncode=0, stdout="ok", stderr=""))
+
+    assert main(["--root", str(root), "push", "--auto", "--send"]) == 0
+    capsys.readouterr()
+
+    assert sent == [saved_chunk]
+    assert outbox.exists() is False
+    assert (root / "data/push-history/2026-08-23-full.success").exists()
+
+
+def test_s2_outbox_files_are_ignored():
+    assert "data/push-history/*.outbox.json" in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+
+def test_s3_backfill_audit_applies_supply_training_and_salon_caps(tmp_path, capsys):
+    root = isolated_root(tmp_path)
+    events = [
+        Event(id="supply", name="供应侧大会", date_start="2026-09-01", city="上海", audience_side="supply", event_type="峰会", format="open", acquisition_score=9, ecosystem_score=5, tier="A"),
+        Event(id="training", name="AI 培训", date_start="2026-09-02", city="上海", audience_side="demand", event_type="training", format="open", acquisition_score=9, ecosystem_score=6, tier="A"),
+        Event(id="salon", name="开放沙龙", date_start="2026-09-03", city="上海", audience_side="demand", event_type="沙龙·meetup", format="open", scale_hint="unknown", acquisition_score=9, ecosystem_score=9, tier="A"),
+    ]
+    (root / "data/events.jsonl").write_text("".join(json.dumps(event.to_dict(), ensure_ascii=False) + "\n" for event in events), encoding="utf-8")
+
+    assert main(["--root", str(root), "migrate", "--backfill-audit"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    migrated = {row["id"]: row for row in read_jsonl(root / "data/events.jsonl")}
+
+    assert result["changed_count"] == 3
+    assert result["score_changed_count"] == 3
+    assert (migrated["supply"]["acquisition_score"], migrated["supply"]["tier"]) == (4, "C")
+    assert (migrated["training"]["acquisition_score"], migrated["training"]["tier"]) == (3, "B")
+    assert (migrated["salon"]["acquisition_score"], migrated["salon"]["ecosystem_score"], migrated["salon"]["tier"]) == (7, 7, "B")
+    assert migrated["supply"]["metadata"]["score_audit"]["caps_applied"] == ["supply_acquisition_cap"]
+    assert migrated["training"]["metadata"]["score_audit"]["caps_applied"] == ["pure_training_acquisition_cap"]
+    assert migrated["salon"]["metadata"]["score_audit"]["caps_applied"] == ["small_open_salon_cap"]
+
+
+def test_s3_backfill_audit_keeps_compliant_scores_unchanged(tmp_path, capsys):
+    root = isolated_root(tmp_path)
+    event = Event(id="compliant", name="供应侧小会", date_start="2026-09-01", city="上海", audience_side="supply", acquisition_score=4, ecosystem_score=5, tier="C")
+    (root / "data/events.jsonl").write_text(json.dumps(event.to_dict(), ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert main(["--root", str(root), "migrate", "--backfill-audit"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    migrated = read_jsonl(root / "data/events.jsonl")[0]
+
+    assert result["changed_count"] == 1
+    assert result["score_changed_count"] == 0
+    assert (migrated["acquisition_score"], migrated["ecosystem_score"], migrated["tier"]) == (4, 5, "C")
+    assert migrated["metadata"]["score_audit"] == {
+        "backfilled": True,
+        "caps_applied": [],
+        "final": {"acquisition_score": 4, "ecosystem_score": 5},
+    }
+
+
+def test_s3_backfill_audit_is_idempotent_on_second_run(tmp_path, capsys):
+    root = isolated_root(tmp_path)
+    event = Event(id="supply", name="供应侧大会", date_start="2026-09-01", city="上海", audience_side="supply", acquisition_score=9, ecosystem_score=5, tier="A")
+    (root / "data/events.jsonl").write_text(json.dumps(event.to_dict(), ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert main(["--root", str(root), "migrate", "--backfill-audit"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    after_first = (root / "data/events.jsonl").read_bytes()
+    assert main(["--root", str(root), "migrate", "--backfill-audit"]) == 0
+    second = json.loads(capsys.readouterr().out)
+
+    assert first["changed_count"] == 1
+    assert second["changed_count"] == 0
+    assert (root / "data/events.jsonl").read_bytes() == after_first
+    assert [row["changed_count"] for row in read_jsonl(root / "logs/migrate.jsonl")] == [1, 0]
+
+
+def test_s3_backfill_audit_never_replays_subtractive_corrections(tmp_path, capsys):
+    root = isolated_root(tmp_path)
+    event = Event(
+        id="subtractive",
+        name="杭州小型邀约峰会",
+        date_start="2026-09-01",
+        city="杭州",
+        audience_side="demand",
+        event_type="峰会",
+        format="invite_only",
+        scale_hint="small",
+        acquisition_score=8,
+        ecosystem_score=8,
+        tier="A",
+    )
+    (root / "data/events.jsonl").write_text(json.dumps(event.to_dict(), ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert main(["--root", str(root), "migrate", "--backfill-audit"]) == 0
+    capsys.readouterr()
+    migrated = read_jsonl(root / "data/events.jsonl")[0]
+
+    assert (migrated["acquisition_score"], migrated["ecosystem_score"], migrated["tier"]) == (8, 8, "A")
+    assert migrated["metadata"]["score_audit"]["caps_applied"] == []
+
+
+def _s4_stub_runtime(tmp_path: Path, *, pip_exit: int = 0) -> tuple[Path, Path, dict[str, str]]:
+    root = tmp_path / "runtime"
+    (root / ".venv/bin").mkdir(parents=True)
+    (root / "scripts").mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname='stub'\n", encoding="utf-8")
+    log = tmp_path / "stub-calls.log"
+    python_stub = root / ".venv/bin/python"
+    python_stub.write_text(
+        "#!/bin/zsh\n"
+        "print -r -- \"$*\" >> \"$RADAR_TEST_LOG\"\n"
+        "if [[ \"$*\" == *\"-m pip install -q -e .\"* ]]; then exit \"$RADAR_STUB_PIP_EXIT\"; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    python_stub.chmod(0o755)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    git_stub = bin_dir / "git"
+    git_stub.write_text("#!/bin/zsh\nexit 0\n", encoding="utf-8")
+    git_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "RADAR_ROOT_OVERRIDE": str(root),
+        "RADAR_TEST_LOG": str(log),
+        "RADAR_STUB_PIP_EXIT": str(pip_exit),
+    }
+    return root, log, env
+
+
+def test_s4_push_script_updates_dependencies_only_when_pyproject_hash_changes(tmp_path):
+    script = ROOT / "scripts/push_local.sh"
+    script_text = script.read_text(encoding="utf-8")
+    assert "RADAR_ROOT_OVERRIDE" in script_text
+    root, log, env = _s4_stub_runtime(tmp_path)
+    marker = root / ".venv/.pyproject.sha256"
+    marker.write_text("stale\n", encoding="utf-8")
+
+    first = subprocess.run(["zsh", str(script)], env=env, text=True, capture_output=True, check=False, timeout=10)
+
+    assert first.returncode == 0, first.stderr
+    first_calls = log.read_text(encoding="utf-8").splitlines()
+    assert "-m pip install -q -e ." in first_calls
+    assert "-m activity_radar.cli push --auto --send" in first_calls
+    expected_hash = hashlib.sha256((root / "pyproject.toml").read_bytes()).hexdigest()
+    assert marker.read_text(encoding="utf-8").strip() == expected_hash
+
+    log.write_text("", encoding="utf-8")
+    second = subprocess.run(["zsh", str(script)], env=env, text=True, capture_output=True, check=False, timeout=10)
+
+    assert second.returncode == 0, second.stderr
+    assert log.read_text(encoding="utf-8").splitlines() == ["-m activity_radar.cli push --auto --send"]
+
+
+def test_s4_failed_dependency_install_keeps_old_environment_and_pushes(tmp_path):
+    script = ROOT / "scripts/push_local.sh"
+    assert "RADAR_ROOT_OVERRIDE" in script.read_text(encoding="utf-8")
+    root, log, env = _s4_stub_runtime(tmp_path, pip_exit=1)
+    marker = root / ".venv/.pyproject.sha256"
+    marker.write_text("old-hash\n", encoding="utf-8")
+
+    result = subprocess.run(["zsh", str(script)], env=env, text=True, capture_output=True, check=False, timeout=10)
+
+    assert result.returncode == 0
+    assert marker.read_text(encoding="utf-8").strip() == "old-hash"
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert calls == ["-m pip install -q -e .", "-m activity_radar.cli push --auto --send"]
+    assert "dependency update failed" in result.stderr
+
+
+def test_s4_push_script_has_valid_zsh_syntax():
+    result = subprocess.run(["zsh", "-n", str(ROOT / "scripts/push_local.sh")], text=True, capture_output=True, check=False)
+    assert result.returncode == 0, result.stderr

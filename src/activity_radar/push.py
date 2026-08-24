@@ -11,7 +11,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .config import RadarConfig
-from .io import append_jsonl, read_json, read_jsonl
+from .io import append_jsonl, read_json, read_jsonl, write_json
 from .schema import Event, parse_iso
 from .rules import is_valid_candidate
 
@@ -58,6 +58,29 @@ def has_successful_auto_run(config: RadarConfig, now: datetime, mode: str) -> bo
         if row.get("kind") == "auto_push" and row.get("status") == "sent" and row.get("mode") == mode and row.get("shanghai_date") == day:
             return True
     return False
+
+
+def auto_delivery_paths(config: RadarConfig, now: datetime, mode: str) -> tuple[Path, Path]:
+    day = _shanghai_time(now).date().isoformat()
+    history = config.root / "data/push-history"
+    return history / f"{day}-{mode}.outbox.json", history / f"{day}-{mode}.success"
+
+
+def research_freshness(config: RadarConfig, now: datetime, mode: str) -> tuple[str, str | None]:
+    """Classify scheduled research as fresh, waiting, or stale in Shanghai time."""
+    local = _shanghai_time(now)
+    meta = read_json(config.root / "data/research-meta.json", {})
+    completed = _parse_datetime(str(meta.get("completed_at") or ""))
+    completed_local = completed.astimezone(ZoneInfo("Asia/Shanghai")) if completed else None
+    if completed_local and completed_local.date() == local.date():
+        return "fresh", None
+
+    cutoff_hour = 22 if mode == "full" else 14
+    if local.hour < cutoff_hour:
+        return "waiting", None
+    if completed_local:
+        return "stale", f"⚠️ 数据为 {completed_local.month}/{completed_local.day} 研究结果（今日研究未完成）"
+    return "stale", "⚠️ 未找到研究结果日期（今日研究未完成）"
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -398,6 +421,8 @@ def send_via_hermes(
     dry_run: bool = True,
     output: Path | None = None,
     log_path: Path | None = None,
+    outbox_path: Path | None = None,
+    success_marker: Path | None = None,
     sleep_fn: Any = None,
 ) -> dict[str, object]:
     if output:
@@ -417,15 +442,35 @@ def send_via_hermes(
         if log_path:
             append_jsonl(log_path, {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), "status": "failed", "target": target, "chars": len(message), "error": error})
         raise RuntimeError(error)
-    chunks = split_message(message)
-    message_id = hashlib.sha256(message.encode("utf-8")).hexdigest()[:16]
+    outbox: dict[str, Any] | None = None
+    if outbox_path and outbox_path.exists():
+        outbox = read_json(outbox_path, {})
+        chunks = [str(chunk) for chunk in outbox.get("chunks", [])]
+        if not chunks:
+            raise RuntimeError(f"Push outbox has no chunks: {outbox_path}")
+        sent = {str(index): str(value) for index, value in dict(outbox.get("sent", {})).items()}
+    else:
+        chunks = split_message(message)
+        sent = {}
+        if outbox_path:
+            outbox = {
+                "chunks": chunks,
+                "sent": sent,
+                "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+            _write_outbox(outbox_path, outbox)
+    message_id = next(iter(sent.values()), hashlib.sha256("\0".join(chunks).encode("utf-8")).hexdigest()[:16])
     sleep_fn = sleep_fn or time.sleep
-    for index, chunk in enumerate(chunks, 1):
+    pending_indexes = [index for index in range(1, len(chunks) + 1) if str(index) not in sent]
+    last_stdout = ""
+    for pending_position, index in enumerate(pending_indexes):
+        chunk = chunks[index - 1]
         # iLink rate-limits bursts of consecutive messages. Permanent failures
         # must fail immediately instead of sleeping through the retry window.
         for attempt, cooldown in enumerate((120, 300, None)):
             result = subprocess.run([executable, "send", "--to", target, "--file", "-", "--json"], input=chunk, text=True, capture_output=True, check=False)
             if result.returncode == 0:
+                last_stdout = result.stdout.strip()
                 break
             error_text = (result.stderr.strip() or result.stdout.strip())[:500]
             retry_cooldown = cooldown if _is_rate_limit_error(error_text) else None
@@ -460,12 +505,27 @@ def send_via_hermes(
                 "chunk_count": len(chunks),
                 "attempt": attempt + 1,
             })
-        if index < len(chunks):
+        if outbox_path and outbox is not None:
+            sent[str(index)] = message_id
+            outbox["sent"] = sent
+            _write_outbox(outbox_path, outbox)
+        if pending_position < len(pending_indexes) - 1:
             sleep_fn(45)
-    response = {"status": "sent", "message_id": message_id, "target": target, "chars": len(message), "chunks": len(chunks), "chunk_chars": [len(chunk) for chunk in chunks], "result": result.stdout.strip()}
+    if success_marker:
+        success_marker.parent.mkdir(parents=True, exist_ok=True)
+        success_marker.write_text("status=sent\n", encoding="utf-8")
+    if outbox_path:
+        outbox_path.unlink(missing_ok=True)
+    response = {"status": "sent", "message_id": message_id, "target": target, "chars": sum(len(chunk) for chunk in chunks), "chunks": len(chunks), "chunk_chars": [len(chunk) for chunk in chunks], "result": last_stdout}
     if log_path:
         append_jsonl(log_path, {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **response})
     return response
+
+
+def _write_outbox(path: Path, value: dict[str, Any]) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    write_json(temporary, value)
+    temporary.replace(path)
 
 
 def record_auto_success(config: RadarConfig, mode: str, now: datetime | None = None) -> None:

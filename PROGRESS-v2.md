@@ -510,3 +510,55 @@ git rm --cached logs/run.jsonl logs/push.jsonl
 - 未执行任何 git 写操作；未 add/commit/rebase/checkout/push。
 - 未外发消息；所有新样张都是 dry-run。未启动 Chromium，未抓网页，未读取/打印密钥，未修改 `~/.local/share/activity-radar` 运行克隆。
 - 本地文件副作用仅为：R2/R3 数据迁移、site/dry-run 样张重建、忽略日志追加；无外部副作用。
+
+## 2026-08-23 遗留风险加固轮进行中
+
+- 已完整读取 `BRIEF-v2-2026-08-18.md` §15，并复核 §2 禁区与 §8 沙箱约束；Challenge Check 通过，按 `WIP=1` 依次执行 S1-S4。
+- 本轮边界：不做任何 git 写操作、不外发、不启动 Chromium、不抓网页、不修改 `~/.local/share/activity-radar`；测试使用临时 root、stub 和 mock 隔离外部副作用。
+- 实施顺序：每项先新增最小失败测试并确认 RED，再做最小实现并确认 GREEN；完成后运行全套测试、编译、shell/plist 语法与只读 diff 检查。
+- 基线：`PYTHONPATH=src .venv/bin/python -m pytest --override-ini addopts= -q -rA` -> `95 passed in 0.95s`。
+- S1：已实现 `data/research-meta.json` 写入、上海日期新鲜度门、截止前 `waiting_fresh_data` 跳过、截止后旧数据日期警告；meta 缺失时明确提示未知日期，不伪造 `M/D`。TDD RED 为 5 failed，GREEN 为 `5 passed`；S1 + 既有 auto/R1 回归为 `8 passed`。
+- S2：已实现 `data/push-history/<上海日期>-<mode>.outbox.json`，发送前落盘、每块成功后原子更新 `sent`，续跑优先使用原块并跳过已发块，全部成功后先写 `.success` 再删除 outbox；`.gitignore` 已忽略 outbox。TDD RED 为 4 failed，GREEN 为 `4 passed`；相关发送/auto/R1 回归为 `17 passed`。测试仅调用 stub Hermes。
+- S3：新增 `radar migrate --backfill-audit`，只对缺审计事件重放 supply/training/salon cap 与 0-10 夹取，随后重算 Tier；周边、小型、邀约等减法不重放。TDD RED 为 4 failed，GREEN 为 `4 passed`；相关迁移/评分回归为 `8 passed`，二跑文件字节不变且 `changed_count=0`。
+- S4：`push_local.sh` 在 pull 成功后比较 `pyproject.toml` SHA；不一致时用现有/新建 venv 安装，成功才更新 marker，失败记录并继续旧环境。TDD RED 为 2 failed + 1 syntax passed，GREEN 为 `3 passed`；R1 联合回归 `4 passed`，shell 语法、plist lint 与 diff 检查通过。执行测试只使用临时 root、stub git 和 stub Python。
+
+## 遗留风险加固轮 Report
+
+时间：2026-08-23 18:31 PDT（仅执行 `BRIEF-v2-2026-08-18.md` §15 S1-S4）
+
+### 结论
+
+- S1-S4 已按设计实现并分别完成 TDD RED/GREEN；全套单测从基线 95 项增至 111 项，最终全部通过。
+- 本轮没有运行 live research、真实 Hermes、真实依赖安装或真实历史数据迁移；没有修改 `data/events.jsonl`、`data/research-meta.json` 或运行克隆。新行为由隔离单测和静态/语法检查验证。
+
+### S1-S4 验收
+
+| 项 | 状态 | 实现与证据 |
+|---|---|---|
+| S1 数据新鲜度握手 | Passed | `radar run --live` 成功结束时写 `data/research-meta.json`，包含 UTC `completed_at`、只读 `git rev-parse HEAD` 得到或回退为 null 的 `git_sha`、`event_count`、`mode`；Actions 既有 `git add data site` 会随 data 提交。`push --auto` 按上海日期判断：当天放行，周日 22:00/周三 14:00 前等待并写 `kind=auto_skip, reason=waiting_fresh_data`，截止后旧数据照发并追加日期警告。meta 缺失时不伪造日期，写“未找到研究结果日期”。5 条 S1 单测通过。 |
+| S2 durable outbox | Passed | 自动发送使用 `data/push-history/<上海日期>-<mode>.outbox.json`；块组在首块前落盘，每块成功后用临时文件替换原子推进 `sent[index]=message_id`。存在未完成 outbox 时 `push --auto --send` 在新鲜度门和内容重建前直接续传，忽略冲突新消息；完成后先写 `.success` 再删 outbox，CLI 随后记 auto 成功。`.gitignore` 已忽略 outbox。4 条 S2 单测通过，Hermes 全为 stub。 |
+| S3 评分审计回填 | Passed | 新增 `radar migrate --backfill-audit`；只对缺 `metadata.score_audit` 的事件重放 supply acquisition cap、training acquisition cap、开放小型/未知规模 salon 双线 cap、0-10 夹取，并重算 Tier。周边、小型、其他城市、邀约等减法绝不重放；结果记录 `backfilled/caps_applied/final`，摘要写 `logs/migrate.jsonl`。4 条 S3 单测覆盖三种 cap、合规分数不变、二跑 `changed_count=0` 与减法不重放。真实 `data/events.jsonl` 本轮未执行迁移。 |
+| S4 运行克隆依赖自更新 | Passed | `push_local.sh` 仅在 pull 成功后比较 `pyproject.toml` SHA 与 `.venv/.pyproject.sha256`；venv 缺失时创建，hash 不同则执行 `pip install -q -e .`，安装成功才更新 marker。失败会输出日志、设置 `RADAR_DEPENDENCY_UPDATE_FAILED=1`，CLI 写本地失败日志并继续旧环境推送。临时 root + stub git/Python 测试证明首次安装、二次跳过、失败继续；`zsh -n` 通过。 |
+
+### 最终验证
+
+| 检查 | 状态 | 实际结果 |
+|---|---|---|
+| 全套单测 | Passed | `PYTHONPATH=src .venv/bin/python -m pytest --override-ini addopts= -q -rA` -> `111 passed in 2.01s`。 |
+| 编译 | Passed | `.venv/bin/python -m compileall -q src tests`，退出码 0。 |
+| shell / plist | Passed | `zsh -n scripts/push_local.sh scripts/install_launchagent.sh scripts/uninstall_launchagent.sh` 退出码 0；`plutil -lint scripts/com.stan.activity-radar.push.plist` -> `OK`。 |
+| diff 空白错误 | Passed | `git diff --check` 退出码 0，仅只读检查。 |
+
+### 产出与外层提交清单
+
+- 代码/脚本：`.gitignore`、`scripts/push_local.sh`、`src/activity_radar/cli.py`、`src/activity_radar/push.py`。
+- 测试/进度：`tests/test_repairs.py`、`PROGRESS-v2.md`。
+- 建议提交信息：`fix: harden activity radar legacy delivery risks`。
+- `BRIEF-v2-2026-08-18.md` 的既有改动是 Stan 输入，本轮只读保留，不列为本轮产出。
+
+### 边界、未测试与副作用
+
+- 未执行任何 git 写操作；只运行 `git status`、`git diff`、`git diff --check` 等只读命令。
+- 未外发、未调用真实 Hermes、未启动 Chromium、未抓网页、未联网研究、未读取或打印密钥。
+- 未修改 `~/.local/share/activity-radar`，也未对真实运行克隆执行 pull、venv 创建或 pip 安装；S4 只在临时目录使用 stub 验证。
+- 未对真实 `data/events.jsonl` 执行 `migrate --backfill-audit`，避免未经外层复核批量降低历史分数；命令行为与幂等性已由隔离测试验证。

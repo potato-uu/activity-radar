@@ -7,6 +7,7 @@ dist/
 build/
 data/push-latest.txt
 data/push-history/*.success
+data/push-history/*.outbox.json
 logs/*.jsonl
 .playwright-mcp/
 大正咖啡集团-*/

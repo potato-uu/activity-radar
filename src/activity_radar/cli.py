@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -11,16 +13,18 @@ from .config import RadarConfig
 from .io import append_jsonl, read_json, read_jsonl, write_json, write_jsonl
 from .normalization import clean_source_title, infer_city
 from .push import (
+    auto_delivery_paths,
     auto_mode,
     build_push_for_config,
     has_successful_auto_run,
     record_auto_success,
+    research_freshness,
     send_via_hermes,
     write_push_artifacts,
 )
 from .render import render_timeline
 from .research import discover_and_score, now_iso, score_pending_candidates
-from .rules import merge_events, prepare_event
+from .rules import classify_tier, merge_events, prepare_event
 from .schema import Event
 
 
@@ -34,6 +38,25 @@ def load_events(config: RadarConfig) -> list[Event]:
 
 def write_events(config: RadarConfig, events: list[Event]) -> None:
     write_jsonl(config.events_path, [event.to_dict() for event in events])
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _read_git_sha(root: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    value = result.stdout.strip()
+    return value if result.returncode == 0 and value else None
 
 
 def update_source_health(config: RadarConfig, research_stats: dict[str, object]) -> list[str]:
@@ -94,6 +117,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     artifacts = write_push_artifacts(config, message, args.push_mode)
     push_result = send_via_hermes(message, config.push_target, dry_run=not args.send, output=push_path, log_path=config.root / "logs/push.jsonl")
     push_result["artifacts"] = artifacts
+    if args.live:
+        write_json(config.root / "data/research-meta.json", {
+            "completed_at": _utc_now().isoformat(timespec="seconds"),
+            "git_sha": _read_git_sha(config.root),
+            "event_count": len(events),
+            "mode": args.push_mode,
+        })
     summary = {"research": research_stats, "stale_sources": stale_sources, "merge": merge_stats, "events": len(events), "site": str(config.site_path), "push": push_result}
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
@@ -109,14 +139,22 @@ def cmd_render(args: argparse.Namespace) -> int:
 
 def cmd_push(args: argparse.Namespace) -> int:
     config = RadarConfig.load(root_from_args(args))
-    now = datetime.now(timezone.utc)
+    now = _utc_now()
     pull_failed = os.getenv("RADAR_GIT_PULL_FAILED") == "1"
+    dependency_update_failed = os.getenv("RADAR_DEPENDENCY_UPDATE_FAILED") == "1"
     if pull_failed:
         append_jsonl(config.root / "logs/push.jsonl", {
             "timestamp": now.isoformat(timespec="seconds"),
             "kind": "pull_failed",
             "status": "failed",
             "error": "git pull --ff-only failed; using local data",
+        })
+    if dependency_update_failed:
+        append_jsonl(config.root / "logs/push.jsonl", {
+            "timestamp": now.isoformat(timespec="seconds"),
+            "kind": "dependency_update_failed",
+            "status": "failed",
+            "error": "pyproject dependency update failed; using old environment",
         })
     mode = args.mode
     if args.auto:
@@ -127,11 +165,49 @@ def cmd_push(args: argparse.Namespace) -> int:
         if has_successful_auto_run(config, now, mode):
             print("skip")
             return 0
+        outbox_path, success_marker = auto_delivery_paths(config, now, mode)
+        if outbox_path.exists() and args.send:
+            result = send_via_hermes(
+                "",
+                config.push_target,
+                dry_run=False,
+                log_path=config.root / "logs/push.jsonl",
+                outbox_path=outbox_path,
+                success_marker=success_marker,
+            )
+            record_auto_success(config, mode, now)
+            result["artifacts"] = {"outbox": str(outbox_path), "resumed": True}
+            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        freshness, freshness_warning = research_freshness(config, now, mode)
+        if freshness == "waiting":
+            append_jsonl(config.root / "logs/push.jsonl", {
+                "timestamp": now.isoformat(timespec="seconds"),
+                "kind": "auto_skip",
+                "reason": "waiting_fresh_data",
+                "mode": mode,
+            })
+            print("skip")
+            return 0
+    else:
+        freshness_warning = None
+        outbox_path = None
+        success_marker = None
     message = build_push_for_config(load_events(config), config, mode=mode)
     if pull_failed:
         message = message.rstrip() + "\n\n⚠️ 数据未更新（git pull 失败）"
+    if freshness_warning:
+        message = message.rstrip() + f"\n\n{freshness_warning}"
     artifacts = write_push_artifacts(config, message, mode)
-    result = send_via_hermes(message, config.push_target, dry_run=not args.send, output=config.root / "data/push-latest.txt", log_path=config.root / "logs/push.jsonl")
+    result = send_via_hermes(
+        message,
+        config.push_target,
+        dry_run=not args.send,
+        output=config.root / "data/push-latest.txt",
+        log_path=config.root / "logs/push.jsonl",
+        outbox_path=outbox_path,
+        success_marker=success_marker,
+    )
     if args.auto and result.get("status") == "sent":
         record_auto_success(config, mode, now)
     result["artifacts"] = artifacts
@@ -154,8 +230,10 @@ def cmd_score(args: argparse.Namespace) -> int:
 
 def cmd_migrate(args: argparse.Namespace) -> int:
     config = RadarConfig.load(root_from_args(args))
+    if args.backfill_audit:
+        return _backfill_score_audits(config)
     if not args.clean_names:
-        print("radar migrate currently requires --clean-names", file=sys.stderr)
+        print("radar migrate requires --clean-names or --backfill-audit", file=sys.stderr)
         return 2
     rows = read_jsonl(config.events_path)
     migrated: list[dict[str, object]] = []
@@ -194,6 +272,96 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     append_jsonl(config.root / "logs/migrate.jsonl", {"timestamp": now_iso(), **result})
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
+
+
+def _backfill_score_audits(config: RadarConfig) -> int:
+    rows = read_jsonl(config.events_path)
+    migrated: list[dict[str, object]] = []
+    changes: list[dict[str, object]] = []
+    score_changed_count = 0
+    for original in rows:
+        row, changed, score_changed = _backfill_score_audit(original, config.scoring)
+        migrated.append(row)
+        if changed:
+            audit = dict(row.get("metadata", {})).get("score_audit", {})
+            changes.append({
+                "id": str(row.get("id") or ""),
+                "caps_applied": list(audit.get("caps_applied", [])),
+                "score_changed": score_changed,
+            })
+            score_changed_count += int(score_changed)
+    if changes:
+        write_jsonl(config.events_path, migrated)
+    result = {
+        "kind": "migrate_backfill_audit",
+        "status": "success",
+        "event_count": len(rows),
+        "changed_count": len(changes),
+        "score_changed_count": score_changed_count,
+        "changes": changes,
+    }
+    append_jsonl(config.root / "logs/migrate.jsonl", {"timestamp": now_iso(), **result})
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def _backfill_score_audit(original: dict[str, object], scoring: dict[str, object]) -> tuple[dict[str, object], bool, bool]:
+    row = dict(original)
+    metadata = dict(row.get("metadata") or {})
+    if "score_audit" in metadata:
+        return row, False, False
+
+    corrections = dict(scoring.get("corrections", {}))
+    acquisition_before = float(row.get("acquisition_score") or 0)
+    ecosystem_before = float(row.get("ecosystem_score") or 0)
+    acquisition = acquisition_before
+    ecosystem = ecosystem_before
+    caps_applied: list[str] = []
+
+    if str(row.get("audience_side") or "") == "supply":
+        capped = min(acquisition, float(corrections.get("supply_acquisition_cap", 4)))
+        if capped != acquisition:
+            caps_applied.append("supply_acquisition_cap")
+        acquisition = capped
+
+    event_type = str(row.get("event_type") or "").strip().lower()
+    if re.search(r"课程|培训|训练营|实训|公开课|体验课|workshop|bootcamp|training", event_type, flags=re.IGNORECASE):
+        capped = min(acquisition, float(corrections.get("pure_training_acquisition_cap", 3)))
+        if capped != acquisition:
+            caps_applied.append("pure_training_acquisition_cap")
+        acquisition = capped
+
+    scale_hint = str(row.get("scale_hint") or "")
+    scale_numbers = [int(value) for value in re.findall(r"\d+", scale_hint)]
+    scale_label = scale_hint.strip().lower()
+    explicitly_small = scale_label in {"small", "small_salon", "small_open", "小型", "小规模"}
+    salon_scale_unknown = not scale_numbers or scale_label in {"", "unknown", "未知"}
+    salon_under_200 = bool(scale_numbers) and max(scale_numbers) < 200
+    if event_type in {"沙龙", "沙龙·meetup"} and str(row.get("format") or "") == "open" and (salon_scale_unknown or salon_under_200 or explicitly_small):
+        cap = float(corrections.get("small_open_salon_cap", 7))
+        capped_acquisition = min(acquisition, cap)
+        capped_ecosystem = min(ecosystem, cap)
+        if (capped_acquisition, capped_ecosystem) != (acquisition, ecosystem):
+            caps_applied.append("small_open_salon_cap")
+        acquisition, ecosystem = capped_acquisition, capped_ecosystem
+
+    clamped_acquisition = max(0.0, min(10.0, acquisition))
+    clamped_ecosystem = max(0.0, min(10.0, ecosystem))
+    if (clamped_acquisition, clamped_ecosystem) != (acquisition, ecosystem):
+        caps_applied.append("score_clamp_0_10")
+    acquisition, ecosystem = clamped_acquisition, clamped_ecosystem
+
+    row["acquisition_score"] = acquisition
+    row["ecosystem_score"] = ecosystem
+    row["tier"] = classify_tier(acquisition, ecosystem, str(row.get("city") or ""), event_type, scoring)
+    metadata["score_audit"] = {
+        "backfilled": True,
+        "caps_applied": caps_applied,
+        "final": {"acquisition_score": acquisition, "ecosystem_score": ecosystem},
+    }
+    row["metadata"] = metadata
+    score_changed = (acquisition, ecosystem) != (acquisition_before, ecosystem_before)
+    return row, True, score_changed
 
 
 def cmd_add(args: argparse.Namespace) -> int:
@@ -273,6 +441,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     migrate = sub.add_parser("migrate", help="run an idempotent data migration")
     migrate.add_argument("--clean-names", action="store_true", help="clean stored event names and re-infer cities")
+    migrate.add_argument("--backfill-audit", action="store_true", help="backfill score audit using idempotent caps only")
     migrate.set_defaults(func=cmd_migrate)
 
     add = sub.add_parser("add", help="manually add one event")
