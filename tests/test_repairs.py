@@ -19,7 +19,7 @@ from activity_radar.io import read_json, read_jsonl
 from activity_radar.provider import Usage
 from activity_radar.push import auto_mode, build_push_for_config, has_successful_auto_run, record_auto_success, send_via_hermes, split_message
 from activity_radar.render import render_timeline
-from activity_radar.research import _score_and_prepare, _score_candidates_in_batches
+from activity_radar.research import _score_and_prepare, _score_candidates_in_batches, rescore_active_events, score_prompt
 from activity_radar.rules import is_valid_candidate, make_id, merge_events, prefilter_candidates, prepare_event
 from activity_radar.schema import Event
 
@@ -1110,3 +1110,232 @@ def test_s4_failed_dependency_install_keeps_old_environment_and_pushes(tmp_path)
 def test_s4_push_script_has_valid_zsh_syntax():
     result = subprocess.run(["zsh", "-n", str(ROOT / "scripts/push_local.sh")], text=True, capture_output=True, check=False)
     assert result.returncode == 0, result.stderr
+
+
+def test_t1_chatgpt_ads_scoring_weights_and_prompt_are_vertical():
+    config = RadarConfig.load(ROOT)
+    assert config.scoring["score_profile"] == "chatgpt_ads_v1"
+    assert config.scoring["weights"]["acquisition"] == {"p0": 0.65, "p1": 0.35}
+    assert config.scoring["weights"]["ecosystem"] == {
+        "platform_presence": 0.55,
+        "channel_ecosystem": 0.45,
+    }
+
+    prompt = score_prompt(
+        [{"name": "出海品牌增长大会", "date_start": "2026-09-01", "city": "上海"}],
+        config.scoring,
+    )
+    assert "ChatGPT Ads 潜在买家密度" in prompt
+    assert "OpenAI 官方 > 其他 AI 平台 > 广告平台" in prompt
+    assert "海外营销代理商、出海服务商、跨境物流/支付" in prompt
+    assert "这场会对卖 ChatGPT Ads 有什么用" in prompt
+    assert "新能源" not in prompt
+    assert "AI 开发者" not in prompt
+    assert "星图比特" not in prompt
+
+
+def test_t2_rescore_active_expected_preserves_old_scores_and_status(tmp_path, monkeypatch):
+    config = RadarConfig.load(isolated_root(tmp_path))
+    events = [
+        Event(
+            id="active",
+            name="出海广告主大会",
+            date_start="2026-09-01",
+            city="上海",
+            url="https://example.com/active",
+            status="active",
+            acquisition_score=5,
+            ecosystem_score=4,
+            tier="C",
+            reason="旧语义理由。",
+            last_verified="2026-08-20T00:00:00+00:00",
+        ),
+        Event(
+            id="expected",
+            name="出海营销渠道峰会",
+            date_start="2026-10-01",
+            city="上海",
+            url="https://example.com/expected",
+            status="expected",
+            acquisition_score=4,
+            ecosystem_score=5,
+            tier="C",
+            reason="旧语义理由。",
+            score_history=[{"timestamp": "old", "acquisition_score": 4, "ecosystem_score": 5}],
+        ),
+        Event(
+            id="cancelled",
+            name="已取消活动",
+            date_start="2026-09-02",
+            city="上海",
+            url="https://example.com/cancelled",
+            status="cancelled",
+            acquisition_score=9,
+            ecosystem_score=9,
+            tier="A",
+        ),
+        Event(
+            id="changed",
+            name="出海渠道交流会",
+            date_start="2026-09-03",
+            city="上海",
+            url="https://example.com/changed",
+            status="changed",
+            acquisition_score=6,
+            ecosystem_score=5,
+            tier="B",
+            reason="旧语义理由。",
+        ),
+    ]
+
+    def fake_score(_config, rows):
+        assert all("acquisition_score" not in row for row in rows)
+        assert all("ecosystem_score" not in row for row in rows)
+        assert all("reason" not in row for row in rows)
+        return [
+            {
+                **row,
+                "acquisition_score": 9 if row["id"] == "active" else 3,
+                "ecosystem_score": 6 if row["id"] == "active" else 8,
+                "audience_side": "demand" if row["id"] == "active" else "supply",
+                "scale_hint": "large",
+                "format": "open",
+                "action": "attend" if row["id"] == "active" else "send_colleague",
+                "reason": (
+                    "出海广告主和品牌 marketing 负责人会在场。适合带报价单现场约深聊。"
+                    if row["id"] == "active"
+                    else "海外营销代理商和出海服务商会在场。适合认识可分销的代理商。"
+                ),
+            }
+            for row in rows
+        ]
+
+    monkeypatch.setattr("activity_radar.research._score_candidates", fake_score)
+    rescored, stats = rescore_active_events(config, events)
+    by_id = {event.id: event for event in rescored}
+
+    assert stats["scoring_result"] == "hit"
+    assert stats["target_count"] == 3
+    assert stats["rescored_count"] == 3
+    assert stats["unscored_event_count"] == 0
+    assert stats["before_tiers"] == {"B": 1, "C": 2}
+    assert stats["after_tiers"] == {"A": 3}
+    assert {row["id"] for row in stats["tier_changes"]} == {"active", "expected", "changed"}
+    assert by_id["active"].status == "active"
+    assert by_id["expected"].status == "expected"
+    assert by_id["cancelled"].status == "cancelled"
+    assert by_id["changed"].status == "changed"
+    assert (by_id["active"].score_history[-2]["acquisition_score"], by_id["active"].score_history[-2]["ecosystem_score"]) == (5, 4)
+    assert by_id["active"].score_history[-1]["score_profile"] == "chatgpt_ads_v1"
+    assert by_id["expected"].score_history[0] == {"timestamp": "old", "acquisition_score": 4, "ecosystem_score": 5}
+    assert by_id["expected"].score_history[-1]["score_profile"] == "chatgpt_ads_v1"
+    assert by_id["active"].metadata["score_profile"] == "chatgpt_ads_v1"
+    assert by_id["active"].metadata["score_audit"]["final"] == {
+        "acquisition_score": 9,
+        "ecosystem_score": 6,
+    }
+    assert read_jsonl(config.root / "data/events-rescore-unscored.jsonl") == []
+
+
+def test_t2_rescore_skips_events_already_on_current_profile(tmp_path, monkeypatch):
+    config = RadarConfig.load(isolated_root(tmp_path))
+    event = Event(
+        id="done",
+        name="已完成垂直重排的活动",
+        date_start="2026-09-01",
+        city="上海",
+        url="https://example.com/done",
+        status="changed",
+        metadata={"score_profile": "chatgpt_ads_v1"},
+    )
+    monkeypatch.setattr(
+        "activity_radar.research._score_candidates",
+        lambda *_args: pytest.fail("current-profile event must not be sent to the LLM again"),
+    )
+
+    rescored, stats = rescore_active_events(config, [event])
+
+    assert rescored[0].to_dict() == event.to_dict()
+    assert stats["scoring_result"] == "empty"
+    assert stats["target_count"] == 0
+    assert stats["skipped_current_profile"] == 1
+
+
+def test_t2_verified_city_is_not_reclassified_from_sales_reason():
+    scoring = RadarConfig.load(ROOT).scoring
+    event = prepare_event(
+        {
+            "id": "shanghai",
+            "name": "出海营销渠道峰会",
+            "date_start": "2026-09-01",
+            "city": "上海",
+            "url": "https://example.com/shanghai",
+            "acquisition_score": 6,
+            "ecosystem_score": 6,
+            "reason": "海外营销代理商和出海服务商会在场。适合认识可分销的代理商。",
+        },
+        "test",
+        "now",
+        scoring,
+    )
+
+    assert event.city == "上海"
+    assert (event.acquisition_score, event.ecosystem_score) == (6, 6)
+
+
+def test_t2_merge_never_deletes_existing_history_even_if_now_out_of_scope():
+    scoring = RadarConfig.load(ROOT).scoring
+    existing = Event(
+        id="legacy",
+        name="跨境合规专场·许昌站",
+        date_start="",
+        city="上海",
+        url="https://example.com/legacy",
+        status="active",
+        tier="D",
+        acquisition_score=2,
+        ecosystem_score=1,
+        reason="产业带出海企业会在场。适合先核对名单。",
+        score_history=[{"timestamp": "old", "acquisition_score": 5, "ecosystem_score": 4}],
+        metadata={"score_profile": "chatgpt_ads_v1"},
+    )
+
+    merged, _stats = merge_events([existing], [], {"上海"}, scoring)
+
+    assert [event.id for event in merged] == ["legacy"]
+    assert merged[0].score_history == existing.score_history
+
+
+def test_t3_chatgpt_ads_rerank_push_uses_exact_title_and_score_order(tmp_path):
+    config = RadarConfig.load(isolated_root(tmp_path))
+    events = [
+        Event(id="lower", name="稍低分大会", date_start="2026-08-20", city="上海", tier="A", acquisition_score=8, ecosystem_score=8, reason="出海广告主会在场。适合带报价单深聊。", url="https://example.com/lower"),
+        Event(id="higher", name="更高分大会", date_start="2026-08-22", city="上海", tier="A", acquisition_score=9, ecosystem_score=8, reason="品牌 marketing 负责人会在场。适合现场约深聊。", url="https://example.com/higher"),
+        Event(id="channel", name="渠道生态大会", date_start="2026-08-21", city="上海", tier="A", acquisition_score=7, ecosystem_score=9, reason="海外营销代理商会在场。适合认识可分销的代理商。", url="https://example.com/channel"),
+    ]
+
+    message = build_push_for_config(
+        events,
+        config,
+        today=date(2026, 8, 19),
+        mode="full",
+        chatgpt_ads_rerank=True,
+    )
+
+    assert message.splitlines()[0] == "📡 活动雷达｜ChatGPT Ads 垂直重排版"
+    assert message.index("更高分大会") < message.index("渠道生态大会") < message.index("稍低分大会")
+    assert "品牌 marketing 负责人会在场。" in message
+    assert "海外营销代理商会在场。" in message
+
+
+def test_t3_cli_writes_special_full_push_as_dry_run(tmp_path, capsys):
+    root = isolated_root(tmp_path)
+    event = Event(id="a", name="ChatGPT Ads 客户大会", date_start="2026-09-01", city="上海", tier="A", acquisition_score=9, ecosystem_score=8, reason="出海广告主会在场。适合带报价单现场约深聊。", url="https://example.com/a")
+    (root / "data/events.jsonl").write_text(json.dumps(event.to_dict(), ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert main(["--root", str(root), "push", "--mode", "full", "--chatgpt-ads-rerank"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["status"] == "dry_run"
+    assert result["artifacts"]["history"].endswith("-chatgpt-ads-rerank.txt")
+    assert (root / "data/push-latest.txt").read_text(encoding="utf-8").startswith("📡 活动雷达｜ChatGPT Ads 垂直重排版\n")

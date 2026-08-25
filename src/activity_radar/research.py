@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
@@ -11,7 +13,7 @@ from .adapters import AdapterWindow
 from .adapters.registry import get_adapter
 from .io import append_jsonl, read_jsonl, write_jsonl
 from .provider import OpenAIResponsesClient, ProviderError, Usage, parse_json_text
-from .rules import prefilter_candidates, prepare_event
+from .rules import apply_side_event_links, prefilter_candidates, prepare_event
 from .schema import Event
 
 
@@ -40,7 +42,12 @@ def discover_prompt(source: dict[str, Any], today: date, city_scope: set[str]) -
 
 
 def score_prompt(candidates: list[dict[str, Any]], scoring: dict[str, Any]) -> str:
-    return f"""你是活动评分员。temperature 必须不高于 0.2。按以下规则给每条活动独立打 acquisition_score 和 ecosystem_score（0-10），不合并：获客线看需求侧 ICP 密度，P0 为出海投放操盘手、广告主、出海品牌 marketing 负责人和 GEO 的品牌方客户，P1 为独立站/亚马逊/Shopify 创始人，P2 为新能源/光伏出海负责人；资源线看平台方官方在场深度 0.55、渠道生态 0.35、AI 开发者 0.10。不要因为 GEO 服务商或同类工具商多而提高获客分。reason 必须是两句中文，说明谁会在场以及为什么与星图比特相关。action 只能是 attend/send_colleague/watch_content/host_side_event。
+    return f"""你是 ChatGPT Ads 活动评分员。temperature 必须不高于 0.2。按以下规则给每条活动独立打 acquisition_score 和 ecosystem_score（0-10），不合并：
+
+1. acquisition_score 表示 ChatGPT Ads 潜在买家密度。P0 权重 0.65：出海广告主、出海品牌 marketing 负责人、投放操盘手。P1 权重 0.35：有投放预算的独立站、亚马逊、Shopify 卖家。不要因为供给侧服务商或同类工具商多而提高获客分。
+2. ecosystem_score 由 platform_presence 0.55 和 channel_ecosystem 0.45 组成。platform_presence 的优先级是 OpenAI 官方 > 其他 AI 平台 > 广告平台（Google/Meta/TikTok）官方在场。channel_ecosystem 是可分销 ChatGPT Ads 的渠道：海外营销代理商、出海服务商、跨境物流/支付等已有客户群的服务商。
+3. reason 必须恰好两句中文，回答“这场会对卖 ChatGPT Ads 有什么用”。第一句只说有证据支持的买家或渠道谁会在场；第二句给具体动作，例如“适合带报价单现场约深聊”或“适合认识可分销的代理商”。不得编造参会者、官方在场或投放预算；证据不足时降分并明说不确定。
+action 只能是 attend/send_colleague/watch_content/host_side_event。
 
 配置：{json.dumps(scoring, ensure_ascii=False)}
 候选：{json.dumps(candidates, ensure_ascii=False)}
@@ -68,6 +75,8 @@ def _score_candidates(config: RadarConfig, candidates: list[dict[str, Any]]) -> 
 
 
 def _candidate_key(row: dict[str, Any]) -> tuple[str, str, str]:
+    if row.get("rescore_event_id"):
+        return ("rescore", str(row["rescore_event_id"]), "")
     return (
         str(row.get("url") or "").strip(),
         str(row.get("name") or row.get("raw_title") or "").strip().lower(),
@@ -192,6 +201,193 @@ def score_pending_candidates(config: RadarConfig) -> tuple[list[Event], dict[str
         "score_failures": failures,
         "prefilter": filter_counts,
     }
+
+
+def _event_rescore_candidate(event: Event) -> dict[str, Any]:
+    row = event.to_dict()
+    for field in (
+        "acquisition_score",
+        "ecosystem_score",
+        "tier",
+        "action",
+        "reason",
+        "audience_side",
+        "scale_hint",
+        "format",
+        "score_history",
+        "needs_review",
+        "side_event_opportunity",
+        "related_to",
+    ):
+        row.pop(field, None)
+    metadata = dict(row.get("metadata") or {})
+    metadata.pop("score_audit", None)
+    metadata.pop("score_profile", None)
+    if metadata:
+        row["metadata"] = metadata
+    else:
+        row.pop("metadata", None)
+    row["rescore_event_id"] = event.id
+    return row
+
+
+def rescore_active_events(config: RadarConfig, events: list[Event]) -> tuple[list[Event], dict[str, Any]]:
+    """Re-score current events without losing prior scores or delta status."""
+    rows = [deepcopy(event) for event in events]
+    score_profile = str(config.scoring.get("score_profile") or "chatgpt_ads_v1")
+    current = [event for event in rows if event.status in {"active", "expected", "changed"}]
+    targets = [event for event in current if event.metadata.get("score_profile") != score_profile]
+    skipped_current_profile = len(current) - len(targets)
+    before_tiers = Counter(event.tier for event in targets)
+    pending_path = config.root / "data/events-rescore-unscored.jsonl"
+    if not targets:
+        pending_path.unlink(missing_ok=True)
+        return rows, {
+            "scoring_result": "empty",
+            "score_profile": score_profile,
+            "target_count": 0,
+            "rescored_count": 0,
+            "skipped_current_profile": skipped_current_profile,
+            "unscored_event_count": 0,
+            "before_tiers": {},
+            "after_tiers": {},
+            "tier_changes": [],
+            "score_changes": [],
+            "score_failures": [],
+        }
+
+    candidates = [_event_rescore_candidate(event) for event in targets]
+    scored, pending, failures = _score_candidates_in_batches(config, candidates)
+    by_rescore_id = {
+        str(item.get("rescore_event_id") or item.get("id")): item
+        for item in scored
+        if isinstance(item, dict) and (item.get("rescore_event_id") or item.get("id"))
+    }
+    timestamp = now_iso()
+    tier_changes: list[dict[str, Any]] = []
+    score_changes: list[dict[str, Any]] = []
+    rescored_count = 0
+
+    for event in targets:
+        scored_row = by_rescore_id.get(event.id)
+        if scored_row is None:
+            continue
+        original = next(item for item in candidates if item["rescore_event_id"] == event.id)
+        raw = {**original, **scored_row}
+        for protected in (
+            "id", "name", "name_en", "date_start", "date_end", "city", "venue",
+            "organizer", "url", "ticket_price", "register_deadline", "event_type",
+            "source", "first_seen", "status", "date_precision", "is_series", "occurrences",
+        ):
+            if protected in original:
+                raw[protected] = original[protected]
+        raw["metadata"] = dict(original.get("metadata") or {})
+        scored_reason = str(raw.get("reason") or "")
+        # The persisted city is verified identity data. Sales language such as
+        # "overseas marketing agency" in a new reason must not reclassify it.
+        prepared = prepare_event({**raw, "reason": ""}, event.source, timestamp, config.scoring)
+        prepared.city = event.city
+        prepared.reason = scored_reason
+        before = {
+            "acquisition_score": event.acquisition_score,
+            "ecosystem_score": event.ecosystem_score,
+            "tier": event.tier,
+        }
+        history = list(event.score_history or [])
+        if not history or (
+            float(history[-1].get("acquisition_score", -1)) != event.acquisition_score
+            or float(history[-1].get("ecosystem_score", -1)) != event.ecosystem_score
+        ):
+            history.append({
+                "timestamp": event.last_verified or event.first_seen or timestamp,
+                "acquisition_score": event.acquisition_score,
+                "ecosystem_score": event.ecosystem_score,
+                "score_profile": str(event.metadata.get("score_profile") or "legacy"),
+            })
+        history.append({
+            "timestamp": timestamp,
+            "acquisition_score": prepared.acquisition_score,
+            "ecosystem_score": prepared.ecosystem_score,
+            "score_profile": score_profile,
+        })
+        event.acquisition_score = prepared.acquisition_score
+        event.ecosystem_score = prepared.ecosystem_score
+        event.tier = prepared.tier
+        event.action = prepared.action
+        event.reason = prepared.reason
+        event.audience_side = prepared.audience_side
+        event.scale_hint = prepared.scale_hint
+        event.format = prepared.format
+        event.last_verified = timestamp
+        event.score_history = history
+        event.needs_review = (
+            event.needs_review
+            or abs(before["acquisition_score"] - event.acquisition_score) > 2
+            or abs(before["ecosystem_score"] - event.ecosystem_score) > 2
+        )
+        score_audit = prepared.metadata.get("score_audit") or {
+            "raw": {
+                "acquisition_score": prepared.acquisition_score,
+                "ecosystem_score": prepared.ecosystem_score,
+            },
+            "applied": [],
+            "final": {
+                "acquisition_score": prepared.acquisition_score,
+                "ecosystem_score": prepared.ecosystem_score,
+            },
+        }
+        event.metadata = {
+            **event.metadata,
+            **prepared.metadata,
+            "score_audit": score_audit,
+            "score_profile": score_profile,
+        }
+        after = {
+            "acquisition_score": event.acquisition_score,
+            "ecosystem_score": event.ecosystem_score,
+            "tier": event.tier,
+        }
+        change = {
+            "id": event.id,
+            "name": event.name,
+            "status": event.status,
+            "before": before,
+            "after": after,
+        }
+        score_changes.append(change)
+        if before["tier"] != after["tier"]:
+            tier_changes.append(change)
+        rescored_count += 1
+
+    rows = apply_side_event_links(rows)
+    if pending:
+        write_jsonl(pending_path, pending)
+    else:
+        pending_path.unlink(missing_ok=True)
+    after_tiers = Counter(event.tier for event in targets)
+    result = "unavailable" if failures and not rescored_count else ("partial" if failures or pending else "hit")
+    stats = {
+        "scoring_result": result,
+        "score_profile": score_profile,
+        "target_count": len(targets),
+        "rescored_count": rescored_count,
+        "skipped_current_profile": skipped_current_profile,
+        "unscored_event_count": len(pending),
+        "before_tiers": dict(sorted(before_tiers.items())),
+        "after_tiers": dict(sorted(after_tiers.items())),
+        "tier_changes": tier_changes,
+        "score_changes": score_changes,
+        "score_failures": failures,
+    }
+    _log(config, {
+        "kind": "active_rescore_summary",
+        "score_profile": score_profile,
+        "target_count": len(targets),
+        "rescored_count": rescored_count,
+        "unscored_event_count": len(pending),
+        "scoring_result": result,
+    })
+    return rows, stats
 
 
 def _prefilter_for_scoring(config: RadarConfig, rows: list[dict[str, Any]], anchor: date) -> tuple[list[dict[str, Any]], dict[str, int]]:

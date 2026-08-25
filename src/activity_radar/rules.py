@@ -232,10 +232,13 @@ def prepare_event(raw: dict[str, Any], source_id: str, now: str, scoring: dict[s
         "last_verified": now,
         "status": raw.get("status", "active"),
     })
-    event.city = infer_city(event.name, event.venue, event.reason, event.city)
+    # Scoring reasons describe buyers and channels, not event location evidence.
+    event.city = infer_city(event.name, event.venue, "", event.city)
     event.audience_side = str(raw.get("audience_side") or event.audience_side)
     event.scale_hint = str(raw.get("scale_hint") or event.scale_hint)
     event.format = str(raw.get("format") or event.format)
+    if scoring.get("score_profile"):
+        event.metadata["score_profile"] = str(scoring["score_profile"])
     corrections = scoring.get("corrections", {})
     acquisition = event.acquisition_score
     ecosystem = event.ecosystem_score
@@ -434,10 +437,10 @@ def merge_events(existing: Iterable[Event], candidates: Iterable[Event], city_sc
     training_cap = float(scoring.get("corrections", {}).get("pure_training_acquisition_cap", 3))
     for original in existing:
         event = deepcopy(original)
-        event.city = infer_city(event.name, event.venue, event.reason, event.city)
         valid, _reason = is_valid_candidate(event.to_dict(), scoring)
         allowed_existing = event.city in city_scope or (event.metadata.get("web_only") and event.tier == "A") or event.event_type == "webinar"
         if not valid or not allowed_existing:
+            cleaned_existing.append(event)
             continue
         if re.search(r"课程|培训|训练营|实训|公开课|体验课|workshop|bootcamp|training", f"{event.name} {event.reason}", flags=re.IGNORECASE):
             event.acquisition_score = min(event.acquisition_score, training_cap)

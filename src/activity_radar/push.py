@@ -312,7 +312,14 @@ def build_push(events: list[Event], config: RadarConfig, today: date | None = No
     return build_push_for_config(events, config, today, mode=mode)
 
 
-def build_push_for_config(events: list[Event], config: RadarConfig, today: date | None = None, *, mode: str = "full") -> str:
+def build_push_for_config(
+    events: list[Event],
+    config: RadarConfig,
+    today: date | None = None,
+    *,
+    mode: str = "full",
+    chatgpt_ads_rerank: bool = False,
+) -> str:
     today = today or _shanghai_time().date()
     if mode not in {"full", "delta"}:
         raise ValueError("push mode must be full or delta")
@@ -333,7 +340,15 @@ def build_push_for_config(events: list[Event], config: RadarConfig, today: date 
             return month_end >= today and start <= window_end
         return today <= start <= window_end
 
-    def sort_key(event: Event) -> tuple[str, str]:
+    def sort_key(event: Event) -> tuple[Any, ...]:
+        if chatgpt_ads_rerank:
+            return (
+                -max(event.acquisition_score, event.ecosystem_score),
+                -event.acquisition_score,
+                -event.ecosystem_score,
+                event.date_start or "9999-12-31",
+                event.name,
+            )
         return (event.date_start or "9999-12-31", event.name)
 
     def is_upcoming(event: Event) -> bool:
@@ -391,7 +406,9 @@ def build_push_for_config(events: list[Event], config: RadarConfig, today: date 
     a_text = "\n\n".join(_a_event_block(event, index, today) for index, event in enumerate(a_events, 1)) or "暂无"
     b_text = "\n".join(_two_line_event(event, today) for event in b_events) or "暂无"
     sections = [
-        f"📡 BD 活动雷达｜{today.month}/{today.day} 全量",
+        "📡 活动雷达｜ChatGPT Ads 垂直重排版"
+        if chatgpt_ads_rerank
+        else f"📡 BD 活动雷达｜{today.month}/{today.day} 全量",
         f"⭐ 必看（A 级）\n\n{a_text}",
         f"📅 值得排期（B 级·未来 4 周）\n\n{b_text}",
     ]

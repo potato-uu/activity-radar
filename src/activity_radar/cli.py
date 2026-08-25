@@ -23,7 +23,7 @@ from .push import (
     write_push_artifacts,
 )
 from .render import render_timeline
-from .research import discover_and_score, now_iso, score_pending_candidates
+from .research import discover_and_score, now_iso, rescore_active_events, score_pending_candidates
 from .rules import classify_tier, merge_events, prepare_event
 from .schema import Event
 
@@ -193,12 +193,21 @@ def cmd_push(args: argparse.Namespace) -> int:
         freshness_warning = None
         outbox_path = None
         success_marker = None
-    message = build_push_for_config(load_events(config), config, mode=mode)
+    if args.chatgpt_ads_rerank and (args.auto or mode != "full"):
+        print("--chatgpt-ads-rerank requires --mode full without --auto", file=sys.stderr)
+        return 2
+    message = build_push_for_config(
+        load_events(config),
+        config,
+        mode=mode,
+        chatgpt_ads_rerank=args.chatgpt_ads_rerank,
+    )
     if pull_failed:
         message = message.rstrip() + "\n\n⚠️ 数据未更新（git pull 失败）"
     if freshness_warning:
         message = message.rstrip() + f"\n\n{freshness_warning}"
-    artifacts = write_push_artifacts(config, message, mode)
+    artifact_mode = "chatgpt-ads-rerank" if args.chatgpt_ads_rerank else mode
+    artifacts = write_push_artifacts(config, message, artifact_mode)
     result = send_via_hermes(
         message,
         config.push_target,
@@ -217,9 +226,12 @@ def cmd_push(args: argparse.Namespace) -> int:
 
 def cmd_score(args: argparse.Namespace) -> int:
     config = RadarConfig.load(root_from_args(args))
-    if not args.pending:
-        print("radar score currently requires --pending", file=sys.stderr)
-        return 2
+    if args.active:
+        events, stats = rescore_active_events(config, load_events(config))
+        write_events(config, events)
+        render_timeline(events, config.site_path, now_iso(), config.scoring)
+        print(json.dumps({"score": stats, "events": len(events)}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0 if stats.get("scoring_result") in {"hit", "empty"} else 1
     candidates, stats = score_pending_candidates(config)
     events, merge_stats = merge_events(load_events(config), candidates, config.city_scope, config.scoring)
     write_events(config, events)
@@ -433,10 +445,13 @@ def build_parser() -> argparse.ArgumentParser:
     push.add_argument("--send", action="store_true", help="send through Hermes; default is dry-run")
     push.add_argument("--mode", choices=["full", "delta"], default="full")
     push.add_argument("--auto", action="store_true", help="select full/delta from the current Asia/Shanghai time")
+    push.add_argument("--chatgpt-ads-rerank", action="store_true", help="build the special ChatGPT Ads score-sorted full push")
     push.set_defaults(func=cmd_push)
 
     score = sub.add_parser("score", help="score persisted candidates")
-    score.add_argument("--pending", action="store_true", help="score data/candidates-unscored.jsonl and merge it into events")
+    score_mode = score.add_mutually_exclusive_group(required=True)
+    score_mode.add_argument("--pending", action="store_true", help="score data/candidates-unscored.jsonl and merge it into events")
+    score_mode.add_argument("--active", action="store_true", help="re-score current active/expected/changed events not yet on the configured score profile")
     score.set_defaults(func=cmd_score)
 
     migrate = sub.add_parser("migrate", help="run an idempotent data migration")

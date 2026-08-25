@@ -562,3 +562,110 @@ git rm --cached logs/run.jsonl logs/push.jsonl
 - 未外发、未调用真实 Hermes、未启动 Chromium、未抓网页、未联网研究、未读取或打印密钥。
 - 未修改 `~/.local/share/activity-radar`，也未对真实运行克隆执行 pull、venv 创建或 pip 安装；S4 只在临时目录使用 stub 验证。
 - 未对真实 `data/events.jsonl` 执行 `migrate --backfill-audit`，避免未经外层复核批量降低历史分数；命令行为与幂等性已由隔离测试验证。
+## 2026-08-25 03:46 PDT - ChatGPT Ads 垂直重排轮进行中
+
+- 已完整读取 `BRIEF-v2-2026-08-18.md` §16，并复核 §2 禁区与 §8 沙箱约束；Challenge Check 通过，终点为 `final_verified`，按 T1→T2→T3 串行执行。
+- 边界：不执行任何 git 写操作，不外发，不启动 Chromium，不登录/绕验证码，不读取或打印密钥；T3 只生成 dry-run 文件。
+- 工作区起点：`main...origin/main`；用户已有改动仅为 `BRIEF-v2-2026-08-18.md` 新增 §16，本轮不回退。
+- 数据基线：`data/events.jsonl` 41 条；其中 `active/expected` 16 条，重排前 Tier 为 A=2、B=7、C=7、D=0；39 条已有 `score_history`。
+- 实现缺口：`config/scoring.yaml` 和打分 prompt 仍含已废止的新能源 P2 / `ai_developers`；现有 `radar score --pending` 只能补打未评分候选，尚无全量重打 active/expected 的持久化入口。
+- 验收口径：T1 配置/prompt/测试一致；T2 对全部 current 事件使用真实 Responses LLM 重打，旧分进 `score_history`、Tier 重算，然后运行 `radar run --live` 取最新候选一起进；T3 标题/新分排序/A 级新 reason 全部验证，且 `status=dry_run`。
+
+### 2026-08-25 04:08 PDT - T1 完成，T2 入口已就绪
+
+- T1：`config/scoring.yaml` 新增 `score_profile=chatgpt_ads_v1`；获客权重精确改为 P0=0.65/P1=0.35，删除 P2；生态权重改为 platform=0.55/channel=0.45，删除 `ai_developers`。
+- prompt：改为 ChatGPT Ads 买家/分销渠道语义，明确 OpenAI 官方 > 其他 AI 平台 > Google/Meta/TikTok 官方；reason 必须恰好两句，第一句谁在场，第二句具体销售/渠道动作，并禁止编造。
+- T2 入口：新增 `radar score --active`，只对当前 `active/expected` 重打；受保护的事件身份/status 不由 LLM 改写，旧分和新 `score_profile` 进 `score_history`，失败条目落 `data/events-rescore-unscored.jsonl`。
+- 额外防污染：定向测试暴露旧流程会把 reason 里的“海外营销代理商”误当成城市，从而把已确认上海活动改成海外并误扣分。重打分入口已将存量城市作为受保护事实。
+- T3 入口：新增 `radar push --mode full --chatgpt-ads-rerank`，标题固定为 `📡 活动雷达｜ChatGPT Ads 垂直重排版`；按 Tier 主分 `max(获客,资源)` 降序，同分时获客分优先，落独立 `*-chatgpt-ads-rerank.txt` 历史文件。
+- TDD：首次收集因缺 `rescore_active_events` 正确失败；实现后 4 条新定向测试全绿。全套 `PYTHONPATH=src .venv/bin/python -m pytest --override-ini addopts= -q` -> `115 passed in 2.81s`。
+
+### 2026-08-25 04:30 PDT - T2 存量真实 LLM 重打完成
+
+- 端点预检：有效 `CODEX_BASE_URL` host 为 `sub2api.gaochouxiang.today`、path `/v1`，模型 `gpt-5.5`，鉴权状态仅验证为可用，未输出密钥值。开始前将原始 `data/events.jsonl` 备份到 `/tmp/activity-radar-events-before-chatgpt-ads-20260825.jsonl`，两者起点 SHA-256 同为 `be0c706c8f6c4a28251426c27345332a05cfb6a58a0d01453b9d189a5198f1bd`。
+- 第 1 次真实 `radar score --active`：16/16 `active/expected` 成功，`scoring_result=hit`，pending=0；两个真实 usage 记录为 5393/724 和 9095/6603 input/output tokens。Tier 从 A=2/B=7/C=7 变为 B=4/C=2/D=10，13 条 Tier 改变。
+- 状态语义复核：`changed` 在本库表示仍有效但自上次扫描有变，不是归档/取消。当时还有 24 条 `changed` 旧语义记录（其中 A/B=22），若不重打会直接污染特殊 full 推送。因此 `--active` 口径收口为所有未取消 current 状态，并按 `score_profile` 跳过已完成条目；新增 1 条幂等回归后定向为 `5 passed`。
+- 第 2 次真实续跑：`target_count=24`、`skipped_current_profile=16`、24/24 成功，pending=0；Tier 从 A=10/B=12/C=1/D=1 变为 A=2/B=8/D=14，17 条 Tier 改变。
+- 累计结果：40/40 条 current 事件均有 `metadata.score_profile=chatgpt_ads_v1`，旧分与新分均在 `score_history`；已取消的 1 条保持不变。
+
+## 垂直重排轮 Report
+
+时间：2026-08-25 04:29 PDT
+终态：`completed`（T1-T3 全部完成；T3 仅 dry-run，未外发）
+
+### 结论
+
+- T1 Passed：评分语义已收窄为 ChatGPT Ads 买家/分销渠道；P0/P1=0.65/0.35，platform/channel=0.55/0.45，新能源 P2 和 `ai_developers` 已删除。
+- T2 Passed：原始 40 条未取消 current 事件均用真实 Responses LLM 重打；live 后恢复并补打 2 条被旧 merge 逻辑误删的历史，最终 42/42 current 都是 `chatgpt_ads_v1`，旧 40 条的 ID 和原始分均 40/40 可在 `score_history` 追溯。
+- T2 live Passed with coverage limits：`radar run --live --sources <31 个非 rendered 源>` 真实评分 103 条候选，`scoring_result=hit`、score failures=0、pending=0；真新增 2 条 B（GDMS、East Forward）。五个 rendered 源因“不起 Chromium”禁区明确排除。
+- T3 Passed：特殊 full 标题精确匹配，按 `(max(获客,资源), 获客, 资源)` 降序；A 级 4 条均展示新 reason 的第一句事实判断。`data/push-history/20260825T112735Z-chatgpt-ads-rerank.txt` 为 1473 字/1 块，最后 push 日志 `status=dry_run`。
+
+### T1-T3 验收
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| T1 权重与 prompt | Passed | `config/scoring.yaml`、`score_prompt()` 与新回归一致；prompt 不再含新能源/AI 开发者/星图比特旧语义。 |
+| T2 真实 LLM | Passed | 12 个真实 score batch、145 条次（存量 16+24、live 103、恢复 2），失败批次 0；加 `llm-sweep` 合计 214,357 input / 66,218 output tokens。 |
+| T2 历史保留 | Passed | 43 行/43 唯一 ID；42 current + 1 cancelled；原始 40 个 current ID 及旧分均在。`events-rescore-unscored.jsonl` 不存在，`candidates-unscored.jsonl` 为 0 行。 |
+| T2 reason | Passed | 42/42 current reason 都恰好两句；事件城市不再被“海外营销代理商”等销售描述改写。 |
+| T3 特殊 full | Passed | 标题、A 级顺序 9/7 → 8/6 → 8/6 → 8/5、reason、时间轴链接均断言通过；`push-latest` 与历史文件字节一致。 |
+| 全套回归 | Passed | `PYTHONPATH=src .venv/bin/python -m pytest --override-ini addopts= -q -rA` -> `118 passed in 4.57s`。 |
+| 编译/空白 | Passed | `.venv/bin/python -m compileall -q src tests` exit 0；`git diff --check` exit 0。 |
+| 外发/Chromium/git 写 | Passed（禁区） | 未使用 `--send`，未调用 Hermes，未启动 Chromium，未执行 add/commit/rebase/checkout/push。 |
+
+### 同一原始 cohort 的 Tier 对照
+
+原始 40 条 current 分布：A=12 / B=19 / C=8 / D=1。
+重排后同一 40 条分布：A=4 / B=12 / C=6 / D=18。
+Tier 变化 26 条，不变 14 条；表中分数顺序为“获客/资源”。
+
+| 日期 | 活动 | 旧 Tier/分数 | 新 Tier/分数 |
+|---|---|---:|---:|
+| 2026-08-19 | 2026 虹桥跨境供应链生态发展论坛 | B 6.3/5.2 | C 5/5 |
+| 2026-08-19 | 陆家嘴之夜第五期 / AI+投资 | C 5/4 | D 0/0 |
+| 2026-08-20 | AI科创下午茶第71期：桌面AI智能体平台发展现状及机遇 | B 3/6 | D 0/2 |
+| 2026-08-20 | 徐汇滨江AI 出海Drink Chat | B 7/4 | D 4/2 |
+| 2026-08-21 | Markethon 2026 卖客松：没有假信号的销售黑客松 | B 6/4 | D 1/0 |
+| 2026-08-21 | TRAE AI 创造力大赛 | B 2/6 | D 2/5 |
+| 2026-08-22 | Next Founder Meetup：创始人之约 | B 6/2 | D 2/1 |
+| 2026-08-25 | AI+生态招商沙龙 | B 7/4 | C 4/5 |
+| 2026-08-26 | 2026上海国际广告节 | A 8/6 | B 6/7 |
+| 2026-08-27 | 百度搭子发布会｜AI 办公智能体实训营 | B 3/7 | D 0/3 |
+| 2026-08-28 | AI出海闭门沙龙！共话中国AI出海新格局 | B 6/3 | D 5/2 |
+| 2026-09-01 | 9/1 知外×领英×融创云，共探AI出海局 | A 8/6 | B 6/3 |
+| 2026-09-05 | AICD - Shanghai | B 1/6 | D 2/3 |
+| 2026-09-05 | 微信开发者创新工坊｜上海站：与 AI 共生小程序开发者交流 | B 2/7 | D 0/2 |
+| 2026-09-09 | Inclusion·外滩大会 | A 8/8 | D 3/3 |
+| 2026-09-15 | 上海国际广告新科技秋交会 | C 4.2/4.7 | D 3/4 |
+| 2026-09-15 | 第28届上海国际广告展 | C 4/4 | D 3/4 |
+| 2026-09-17 | 华为全联接大会2026 | A 2/8 | D 3/5 |
+| 2026-09-22 | 2026云栖大会 | A 3/8 | D 1/5 |
+| 2026-09-22 | S-Tron Shanghai 2026 | C 4/4 | D 4/3 |
+| 2026-09-23 | 第五届全球数字贸易博览会 | B 6/4 | C 5/4 |
+| 2026-10-01 | 中国国际广告节 | C 5/5 | B 6/6 |
+| 2026-11-01 | Morketing Summit | A 8/7 | B 7/6 |
+| 2026-11-01 | 世界互联网大会乌镇峰会 | B 4/6 | D 0/1 |
+| 2026-11-05 | 第九届中国国际进口博览会 | A 8/5 | B 7/4 |
+| 2026-11-07 | ⚡️ 2026 Google Devfest 谷歌开发者节 | A 3/8 | B 2/7 |
+
+live 真新增（不混入上表的原始 cohort）：
+
+| 日期 | 活动 | Tier/分数 |
+|---|---|---:|
+| 2026-09-10 | 第十二届 GDMS 全球数字营销峰会 | B 6/5 |
+| 2026-09-17 | East Forward·2026 企业出海大会 | B 7/5 |
+
+### live 覆盖与限制
+
+- 本周 live 运行次数：1，未超过 §2 的每周 2 次上限。本轮 31 源中命中 8 源：OnePilot、calendar seed、GDG、TikTok、霞光社、Eventbrite、annual calendar、llm-sweep。
+- 20 源为 error/blocked/unavailable：其中 16 个直接 HTML/JSON 源多数是同类 `SSL: UNEXPECTED_EOF_WHILE_READING`；OpenAI 源 HTTP 403，Meta 源 robots Disallow，Microsoft 404，WeChat 缺 `miku_ai`。这些是当前数据覆盖缺口，不是“无活动”。
+- 五个 rendered 源 `huodongxing/luma-shanghai-ai/10times/mosu-space/meetup-shanghai-ai` 按用户明确禁区未执行；不声称它们已扫描。
+- API 成本：Unknown。日志有 token usage，但未配置 input/output price，`api_cost=null`；未猜测金额。
+
+### 产出与副作用
+
+- 代码/配置：`config/scoring.yaml`、`src/activity_radar/research.py`、`rules.py`、`push.py`、`cli.py`、`tests/test_repairs.py`。
+- 数据/网页：`data/events.jsonl`、`candidates-latest.jsonl`、`source-health.json`、`research-meta.json`、`site/index.html`。
+- dry-run 样张：`data/push-history/20260825T111803Z-full.txt`（live 标准 full）、`data/push-history/20260825T112735Z-chatgpt-ads-rerank.txt`（T3 最终版）、`data/push-latest.txt`。
+- 未产生外部副作用：未发送微信，未启动 Chromium，未登录/绕验证码，未修改 LaunchAgent/Actions/运行克隆，未做任何 git 写操作。
+- 建议提交信息：`feat: rerank activity radar for ChatGPT Ads`；由外层精确 stage，不要包含 `.env`、`logs/*.jsonl` 或 `/tmp` 备份。
