@@ -669,3 +669,17 @@ live 真新增（不混入上表的原始 cohort）：
 - dry-run 样张：`data/push-history/20260825T111803Z-full.txt`（live 标准 full）、`data/push-history/20260825T112735Z-chatgpt-ads-rerank.txt`（T3 最终版）、`data/push-latest.txt`。
 - 未产生外部副作用：未发送微信，未启动 Chromium，未登录/绕验证码，未修改 LaunchAgent/Actions/运行克隆，未做任何 git 写操作。
 - 建议提交信息：`feat: rerank activity radar for ChatGPT Ads`；由外层精确 stage，不要包含 `.env`、`logs/*.jsonl` 或 `/tmp` 备份。
+
+## 代理兜底 Report
+
+时间：2026-08-25 04:39 PDT
+终态：`completed`（仅本地代码与隔离单测；未调用真实 Hermes，未外发）
+
+- Passed：`send_via_hermes` 每块首次出现 `Cannot connect to host 127.0.0.1` 时立即直连重试一次；直连环境剥离 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/http_proxy/https_proxy/all_proxy/NO_PROXY` 并设置 `NO_PROXY=*`。
+- Passed：直连旁路不占频控 `attempt`，后续频控重试继续复用直连环境；其他永久失败、分块等待和 durable outbox 行为不变。
+- Passed：直连仍返回同一代理错误时写入 `kind=proxy_bypass_ineffective`，随后沿原失败路径退出，不猜测成功。
+- TDD 证据：新增测试先得到 `2 failed`，频控交互测试先得到 `1 failed`；实现后代理/频控/outbox 定向回归 `9 passed`。
+- 全量验证：`PYTHONPATH=src .venv/bin/python -m pytest --override-ini addopts= -q -rA` -> `121 passed in 7.69s`；`.venv/bin/python -m compileall -q src tests` 与 `git diff --check` 均退出 0。
+- Not tested：未制造真实代理故障、未调用真实 Hermes；真实进程端到端行为留给外层受控验收。
+- 边界：未联网抓页、未启动 Chromium、未发送消息、未读取密钥、未执行任何 git 写操作；用户已有 `BRIEF-v2-2026-08-18.md` 与 `data/source-health.json` 改动保持不动。
+- 本轮文件：`src/activity_radar/push.py`、`tests/test_repairs.py`、`PROGRESS-v2.md`；建议提交信息：`fix: bypass unavailable local proxy for Hermes send`。

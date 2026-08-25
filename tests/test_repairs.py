@@ -712,6 +712,108 @@ def test_send_via_hermes_does_not_retry_permanent_failure(tmp_path, monkeypatch)
     assert rows[-1]["attempt"] == 1
 
 
+def test_send_via_hermes_bypasses_unreachable_local_proxy_once(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    proxy_keys = (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "NO_PROXY",
+    )
+    for key in proxy_keys:
+        monkeypatch.setenv(key, "http://127.0.0.1:7890")
+    calls: list[dict[str, object]] = []
+    sleeps: list[int] = []
+
+    def fake_run(_cmd, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return SimpleNamespace(returncode=1, stdout="", stderr="Cannot connect to host 127.0.0.1:7890 ssl:default")
+        return SimpleNamespace(returncode=0, stdout='{"success": true}', stderr="")
+
+    monkeypatch.setattr(push_mod.shutil, "which", lambda _name: "/fake/hermes")
+    monkeypatch.setattr(push_mod.subprocess, "run", fake_run)
+
+    result = send_via_hermes(
+        "hello",
+        "weixin",
+        dry_run=False,
+        log_path=tmp_path / "push.jsonl",
+        sleep_fn=sleeps.append,
+    )
+
+    assert result["status"] == "sent"
+    assert len(calls) == 2
+    assert "env" not in calls[0]
+    direct_env = calls[1]["env"]
+    assert isinstance(direct_env, dict)
+    assert direct_env["NO_PROXY"] == "*"
+    assert all(key not in direct_env for key in proxy_keys if key != "NO_PROXY")
+    assert direct_env["PATH"] == os.environ["PATH"]
+    assert sleeps == []
+
+
+def test_send_via_hermes_logs_ineffective_proxy_bypass(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    calls = 0
+
+    def fake_run(_cmd, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(returncode=1, stdout="", stderr="Cannot connect to host 127.0.0.1:7890 ssl:default")
+
+    monkeypatch.setattr(push_mod.shutil, "which", lambda _name: "/fake/hermes")
+    monkeypatch.setattr(push_mod.subprocess, "run", fake_run)
+    log_path = tmp_path / "push.jsonl"
+
+    with pytest.raises(RuntimeError, match="after 1 attempts"):
+        send_via_hermes("hello", "weixin", dry_run=False, log_path=log_path, sleep_fn=lambda _seconds: None)
+
+    assert calls == 2
+    rows = read_jsonl(log_path)
+    assert any(row.get("kind") == "proxy_bypass_ineffective" for row in rows)
+    assert rows[-1]["status"] == "failed"
+    assert rows[-1]["attempt"] == 1
+
+
+def test_proxy_bypass_does_not_consume_rate_limit_retry(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    calls: list[dict[str, object]] = []
+    sleeps: list[int] = []
+
+    def fake_run(_cmd, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return SimpleNamespace(returncode=1, stdout="", stderr="Cannot connect to host 127.0.0.1:7890 ssl:default")
+        if len(calls) == 2:
+            return SimpleNamespace(returncode=1, stdout='{"error": "iLink sendmessage rate limited"}', stderr="")
+        return SimpleNamespace(returncode=0, stdout='{"success": true}', stderr="")
+
+    monkeypatch.setattr(push_mod.shutil, "which", lambda _name: "/fake/hermes")
+    monkeypatch.setattr(push_mod.subprocess, "run", fake_run)
+
+    result = send_via_hermes(
+        "hello",
+        "weixin",
+        dry_run=False,
+        log_path=tmp_path / "push.jsonl",
+        sleep_fn=sleeps.append,
+    )
+
+    assert result["status"] == "sent"
+    assert len(calls) == 3
+    assert "env" not in calls[0]
+    assert calls[1]["env"]["NO_PROXY"] == "*"
+    assert calls[2]["env"]["NO_PROXY"] == "*"
+    assert sleeps == [120]
+
+
 def test_auto_mode_catches_up_later_same_day():
     """A missed exact hour still sends later the same Shanghai day."""
     late_sunday = datetime(2026, 8, 23, 15, 0, tzinfo=timezone.utc)  # 23:00 Shanghai Sunday

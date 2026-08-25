@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import subprocess
 import re
@@ -18,6 +19,16 @@ from .rules import is_valid_candidate
 
 PUSH_MAX_CHARS = 1800
 TIMELINE_URL = "https://potato-uu.github.io/activity-radar/"
+LOCAL_PROXY_CONNECT_ERROR = "Cannot connect to host 127.0.0.1"
+PROXY_ENV_KEYS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "NO_PROXY",
+)
 
 
 def eligible(event: Event, config: RadarConfig) -> bool:
@@ -482,14 +493,39 @@ def send_via_hermes(
     last_stdout = ""
     for pending_position, index in enumerate(pending_indexes):
         chunk = chunks[index - 1]
+        command = [executable, "send", "--to", target, "--file", "-", "--json"]
+        direct_env: dict[str, str] | None = None
         # iLink rate-limits bursts of consecutive messages. Permanent failures
         # must fail immediately instead of sleeping through the retry window.
         for attempt, cooldown in enumerate((120, 300, None)):
-            result = subprocess.run([executable, "send", "--to", target, "--file", "-", "--json"], input=chunk, text=True, capture_output=True, check=False)
+            run_options: dict[str, Any] = {"input": chunk, "text": True, "capture_output": True, "check": False}
+            if direct_env is not None:
+                run_options["env"] = direct_env
+            result = subprocess.run(command, **run_options)
+            error_text = (result.stderr.strip() or result.stdout.strip())[:500]
+            if result.returncode != 0 and direct_env is None and LOCAL_PROXY_CONNECT_ERROR in error_text:
+                direct_env = os.environ.copy()
+                for key in PROXY_ENV_KEYS:
+                    direct_env.pop(key, None)
+                direct_env["NO_PROXY"] = "*"
+                result = subprocess.run(command, **run_options, env=direct_env)
+                error_text = (result.stderr.strip() or result.stdout.strip())[:500]
+                if result.returncode != 0 and LOCAL_PROXY_CONNECT_ERROR in error_text and log_path:
+                    append_jsonl(log_path, {
+                        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        "kind": "proxy_bypass_ineffective",
+                        "status": "failed",
+                        "message_id": message_id,
+                        "target": target,
+                        "chunk": index,
+                        "chunk_count": len(chunks),
+                        "attempt": attempt + 1,
+                        "returncode": result.returncode,
+                        "error": error_text,
+                    })
             if result.returncode == 0:
                 last_stdout = result.stdout.strip()
                 break
-            error_text = (result.stderr.strip() or result.stdout.strip())[:500]
             retry_cooldown = cooldown if _is_rate_limit_error(error_text) else None
             if log_path:
                 append_jsonl(log_path, {
