@@ -23,7 +23,13 @@ from .push import (
     write_push_artifacts,
 )
 from .render import render_timeline
-from .research import discover_and_score, now_iso, rescore_active_events, score_pending_candidates
+from .research import (
+    discover_and_score,
+    now_iso,
+    rescore_active_events,
+    rescore_adjacent_value_events,
+    score_pending_candidates,
+)
 from .rules import classify_tier, merge_events, prepare_event
 from .schema import Event
 
@@ -226,8 +232,9 @@ def cmd_push(args: argparse.Namespace) -> int:
 
 def cmd_score(args: argparse.Namespace) -> int:
     config = RadarConfig.load(root_from_args(args))
-    if args.active:
-        events, stats = rescore_active_events(config, load_events(config))
+    if args.active or args.adjacent_value:
+        rescore = rescore_adjacent_value_events if args.adjacent_value else rescore_active_events
+        events, stats = rescore(config, load_events(config))
         write_events(config, events)
         render_timeline(events, config.site_path, now_iso(), config.scoring)
         print(json.dumps({"score": stats, "events": len(events)}, ensure_ascii=False, indent=2, sort_keys=True))
@@ -452,6 +459,7 @@ def build_parser() -> argparse.ArgumentParser:
     score_mode = score.add_mutually_exclusive_group(required=True)
     score_mode.add_argument("--pending", action="store_true", help="score data/candidates-unscored.jsonl and merge it into events")
     score_mode.add_argument("--active", action="store_true", help="re-score current active/expected/changed events not yet on the configured score profile")
+    score_mode.add_argument("--adjacent-value", action="store_true", help="re-score only current D events that were A/B before chatgpt_ads_v1")
     score.set_defaults(func=cmd_score)
 
     migrate = sub.add_parser("migrate", help="run an idempotent data migration")

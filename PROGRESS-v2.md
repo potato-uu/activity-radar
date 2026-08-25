@@ -683,3 +683,47 @@ live 真新增（不混入上表的原始 cohort）：
 - Not tested：未制造真实代理故障、未调用真实 Hermes；真实进程端到端行为留给外层受控验收。
 - 边界：未联网抓页、未启动 Chromium、未发送消息、未读取密钥、未执行任何 git 写操作；用户已有 `BRIEF-v2-2026-08-18.md` 与 `data/source-health.json` 改动保持不动。
 - 本轮文件：`src/activity_radar/push.py`、`tests/test_repairs.py`、`PROGRESS-v2.md`；建议提交信息：`fix: bypass unavailable local proxy for Hermes send`。
+
+## 相邻价值轮 Report
+
+时间：2026-08-25 04:57 PDT
+终态：`completed_with_deviation`（U1-U3 已执行；U2 真实 LLM 目标分布未完全达到）
+
+### U1-U3
+
+| 项 | 状态 | 实现与证据 |
+|---|---|---|
+| U1 评分语义修正 | Passed | `score_profile` 升级为 `chatgpt_ads_adjacent_v1`；生态权重改为 platform/channel/adjacent = 0.50/0.35/0.15。prompt 明确 AI 行业大会、平台方开发者活动、出海生态圈层的 2-5 分相邻价值，以及 reason 的“在场感/圈层价值”写法。获客权重和 Tier 阈值未改。 |
+| U2 定向真实重打 | Passed（调用）/ Deviation（目标分布） | 选择器只命中当前 D 且 `chatgpt_ads_v1` 前历史分曾达到 A/B 的 14 条；真实 Responses LLM 一批完成 14/14，失败 0、pending 0，usage 为 9,392 input / 6,322 output tokens，`api_cost=null`。结果 D=9/C=1/B=4/A=0；5/14 被救回 C/B，未达到“多数回到 C/B”的预期。 |
+| U3 展示与样张 | Passed | `site/index.html` 显示全部 5 条被救回的 C/B，隐藏全部 9 条 D；dry-run 推送仍只收 A/B，C/D 均未进入。样张 `data/push-history/20260825T115609Z-chatgpt-ads-rerank.txt` 为 1,790 字/1 块，`status=dry_run`，与 `data/push-latest.txt` 字节一致。 |
+
+### 被救回 C/B
+
+| 活动 | 新 Tier | 获客/生态 |
+|---|---:|---:|
+| Markethon 2026 卖客松：没有假信号的销售黑客松 | C | 4/4 |
+| Inclusion·外滩大会 | B | 3/6 |
+| 华为全联接大会2026 | B | 2/6 |
+| 2026云栖大会 | B | 2/6 |
+| AI出海闭门沙龙！共话中国AI出海新格局 | B | 6/5 |
+
+### 验证
+
+- TDD：新增入口前定向测试按预期因 `rescore_adjacent_value_events` 不存在而 RED；实现后 U1/U2/U3 与既有 rescore 定向测试 `5 passed`。
+- 全套单测：`PYTHONPATH=src .venv/bin/python -m pytest --override-ini addopts= -q` -> `123 passed in 7.04s`。
+- 编译/空白：`.venv/bin/python -m compileall -q src tests` 与 `git diff --check` 均退出 0。
+- 数据：`data/events.jsonl` 为 43 行/43 个唯一 ID；14/14 重打事件保留 `chatgpt_ads_v1` 历史并追加新 profile；14/14 reason 恰好两句；无 `data/events-rescore-unscored.jsonl`。
+- 幂等：第二次 `radar score --adjacent-value` 的 `target_count=0`、`skipped_current_profile=9`，前后 events SHA-256 均为 `c0c85ee6e4a08f77fbbf8bce3ae8fad106ed999f6c901e8dfc42be6c74db8deb`，未再次调用 LLM。
+
+### Deviation / 最强异议
+
+- “多数回到 C”与现有数学规则存在张力：U1 只给 `ecosystem_score` 增加相邻价值，而不变的 C 规则要求获客、生态两线都在 4-5；缺少直接买家的相邻活动即使生态升到 4-5，仍会因获客 <4 留在 D。真实结果中的世界互联网大会为 0/4、TRAE 为 1/5，正好暴露该冲突。
+- 本轮没有为追目标手工抬高获客分，也没有擅改 Tier。若业务目标是“相邻价值活动可见”，更一致的后续方案是新增独立 `adjacent` 展示标签/网页入口，而不是把没有买家证据的活动伪装成 C；该设计变更需 Stan/外层另行批准。
+- API 成本为 Unknown：日志只有 token usage，未配置 input/output 单价，不猜测金额。
+
+### 产出与边界
+
+- 代码/配置/测试：`config/scoring.yaml`、`src/activity_radar/research.py`、`src/activity_radar/cli.py`、`tests/test_repairs.py`。
+- 数据/展示/报告：`data/events.jsonl`、`site/index.html`、`data/push-latest.txt`、`data/push-history/20260825T115609Z-chatgpt-ads-rerank.txt`、`PROGRESS-v2.md`。
+- 建议提交信息：`feat: retain adjacent value in activity scoring`；由外层精确 stage，不包含 `.env`、`logs/*.jsonl` 或 `/tmp/activity-radar-events-before-adjacent-20260825.jsonl`。
+- 未执行任何 git 写操作；未外发、未调用 Hermes、未启动 Chromium、未抓网页、未登录或绕过保护；未打印、复制或写入密钥。

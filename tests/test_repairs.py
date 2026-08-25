@@ -19,7 +19,13 @@ from activity_radar.io import read_json, read_jsonl
 from activity_radar.provider import Usage
 from activity_radar.push import auto_mode, build_push_for_config, has_successful_auto_run, record_auto_success, send_via_hermes, split_message
 from activity_radar.render import render_timeline
-from activity_radar.research import _score_and_prepare, _score_candidates_in_batches, rescore_active_events, score_prompt
+from activity_radar.research import (
+    _score_and_prepare,
+    _score_candidates_in_batches,
+    rescore_active_events,
+    rescore_adjacent_value_events,
+    score_prompt,
+)
 from activity_radar.rules import is_valid_candidate, make_id, merge_events, prefilter_candidates, prepare_event
 from activity_radar.schema import Event
 
@@ -1214,13 +1220,14 @@ def test_s4_push_script_has_valid_zsh_syntax():
     assert result.returncode == 0, result.stderr
 
 
-def test_t1_chatgpt_ads_scoring_weights_and_prompt_are_vertical():
+def test_u1_chatgpt_ads_scoring_keeps_adjacent_industry_value():
     config = RadarConfig.load(ROOT)
-    assert config.scoring["score_profile"] == "chatgpt_ads_v1"
+    assert config.scoring["score_profile"] == "chatgpt_ads_adjacent_v1"
     assert config.scoring["weights"]["acquisition"] == {"p0": 0.65, "p1": 0.35}
     assert config.scoring["weights"]["ecosystem"] == {
-        "platform_presence": 0.55,
-        "channel_ecosystem": 0.45,
+        "platform_presence": 0.50,
+        "channel_ecosystem": 0.35,
+        "adjacent_industry": 0.15,
     }
 
     prompt = score_prompt(
@@ -1230,10 +1237,145 @@ def test_t1_chatgpt_ads_scoring_weights_and_prompt_are_vertical():
     assert "ChatGPT Ads 潜在买家密度" in prompt
     assert "OpenAI 官方 > 其他 AI 平台 > 广告平台" in prompt
     assert "海外营销代理商、出海服务商、跨境物流/支付" in prompt
+    assert "adjacent_industry" in prompt
+    assert "AI 行业大会、平台方开发者活动、出海生态圈层" in prompt
+    assert "2-5 分基础分" in prompt
+    assert "在场感/圈层价值" in prompt
+    assert "非广告主场合不打 0" in prompt
     assert "这场会对卖 ChatGPT Ads 有什么用" in prompt
     assert "新能源" not in prompt
     assert "AI 开发者" not in prompt
     assert "星图比特" not in prompt
+
+
+def test_u2_adjacent_rescore_only_targets_current_d_with_pre_vertical_ab_history(tmp_path, monkeypatch):
+    config = RadarConfig.load(isolated_root(tmp_path))
+    events = [
+        Event(
+            id="rescue",
+            name="AI 行业大会",
+            date_start="2026-09-01",
+            city="上海",
+            url="https://example.com/rescue",
+            status="changed",
+            acquisition_score=1,
+            ecosystem_score=2,
+            tier="D",
+            reason="旧垂直理由。",
+            score_history=[
+                {"timestamp": "legacy", "acquisition_score": 2, "ecosystem_score": 7},
+                {"timestamp": "vertical", "score_profile": "chatgpt_ads_v1", "acquisition_score": 1, "ecosystem_score": 2},
+            ],
+            metadata={"score_profile": "chatgpt_ads_v1"},
+        ),
+        Event(
+            id="always-d",
+            name="低价值活动",
+            date_start="2026-09-02",
+            city="上海",
+            url="https://example.com/always-d",
+            status="active",
+            acquisition_score=1,
+            ecosystem_score=2,
+            tier="D",
+            score_history=[
+                {"timestamp": "legacy", "acquisition_score": 3, "ecosystem_score": 3},
+                {"timestamp": "vertical", "score_profile": "chatgpt_ads_v1", "acquisition_score": 1, "ecosystem_score": 2},
+            ],
+            metadata={"score_profile": "chatgpt_ads_v1"},
+        ),
+        Event(
+            id="already-visible",
+            name="已有 C 级活动",
+            date_start="2026-09-03",
+            city="上海",
+            url="https://example.com/already-visible",
+            status="active",
+            acquisition_score=4,
+            ecosystem_score=4,
+            tier="C",
+            score_history=[{"timestamp": "legacy", "acquisition_score": 7, "ecosystem_score": 6}],
+            metadata={"score_profile": "chatgpt_ads_v1"},
+        ),
+        Event(
+            id="cancelled",
+            name="已取消活动",
+            date_start="2026-09-04",
+            city="上海",
+            url="https://example.com/cancelled",
+            status="cancelled",
+            acquisition_score=1,
+            ecosystem_score=1,
+            tier="D",
+            score_history=[{"timestamp": "legacy", "acquisition_score": 8, "ecosystem_score": 8}],
+            metadata={"score_profile": "chatgpt_ads_v1"},
+        ),
+    ]
+
+    def fake_score(_config, rows):
+        assert [row["rescore_event_id"] for row in rows] == ["rescue"]
+        return [{
+            **rows[0],
+            "acquisition_score": 4,
+            "ecosystem_score": 5,
+            "audience_side": "mixed",
+            "scale_hint": "unknown",
+            "format": "open",
+            "action": "watch_content",
+            "reason": "直接买家证据不足。适合维持 AI 圈层在场感。",
+        }]
+
+    monkeypatch.setattr("activity_radar.research._score_candidates", fake_score)
+    rescored, stats = rescore_adjacent_value_events(config, events)
+    by_id = {event.id: event for event in rescored}
+
+    assert stats["selection_mode"] == "adjacent_value"
+    assert stats["target_count"] == 1
+    assert stats["before_tiers"] == {"D": 1}
+    assert stats["after_tiers"] == {"C": 1}
+    assert stats["rescored_count"] == 1
+    assert by_id["rescue"].tier == "C"
+    assert by_id["rescue"].metadata["score_profile"] == "chatgpt_ads_adjacent_v1"
+    assert by_id["rescue"].score_history[-2]["score_profile"] == "chatgpt_ads_v1"
+    assert by_id["rescue"].score_history[-1]["score_profile"] == "chatgpt_ads_adjacent_v1"
+    assert by_id["always-d"].to_dict() == events[1].to_dict()
+    assert by_id["already-visible"].to_dict() == events[2].to_dict()
+    assert by_id["cancelled"].to_dict() == events[3].to_dict()
+
+
+def test_u3_timeline_shows_c_hides_d_and_push_keeps_c_out(tmp_path):
+    config = RadarConfig.load(isolated_root(tmp_path))
+    rescued = Event(
+        id="rescued",
+        name="相邻价值 C 级大会",
+        date_start="2026-09-01",
+        city="上海",
+        url="https://example.com/rescued",
+        tier="C",
+        acquisition_score=4,
+        ecosystem_score=5,
+        reason="直接买家证据不足。适合维持 AI 圈层在场感。",
+    )
+    hidden = Event(
+        id="hidden",
+        name="仍为 D 级活动",
+        date_start="2026-09-02",
+        city="上海",
+        url="https://example.com/hidden",
+        tier="D",
+        acquisition_score=2,
+        ecosystem_score=3,
+    )
+    output = config.root / "site/index.html"
+
+    render_timeline([rescued, hidden], output, "now", config.scoring)
+    page = output.read_text(encoding="utf-8")
+    message = build_push_for_config([rescued, hidden], config, today=date(2026, 8, 25), mode="full")
+
+    assert "相邻价值 C 级大会" in page
+    assert "仍为 D 级活动" not in page
+    assert "相邻价值 C 级大会" not in message
+    assert "仍为 D 级活动" not in message
 
 
 def test_t2_rescore_active_expected_preserves_old_scores_and_status(tmp_path, monkeypatch):
@@ -1328,10 +1470,10 @@ def test_t2_rescore_active_expected_preserves_old_scores_and_status(tmp_path, mo
     assert by_id["cancelled"].status == "cancelled"
     assert by_id["changed"].status == "changed"
     assert (by_id["active"].score_history[-2]["acquisition_score"], by_id["active"].score_history[-2]["ecosystem_score"]) == (5, 4)
-    assert by_id["active"].score_history[-1]["score_profile"] == "chatgpt_ads_v1"
+    assert by_id["active"].score_history[-1]["score_profile"] == "chatgpt_ads_adjacent_v1"
     assert by_id["expected"].score_history[0] == {"timestamp": "old", "acquisition_score": 4, "ecosystem_score": 5}
-    assert by_id["expected"].score_history[-1]["score_profile"] == "chatgpt_ads_v1"
-    assert by_id["active"].metadata["score_profile"] == "chatgpt_ads_v1"
+    assert by_id["expected"].score_history[-1]["score_profile"] == "chatgpt_ads_adjacent_v1"
+    assert by_id["active"].metadata["score_profile"] == "chatgpt_ads_adjacent_v1"
     assert by_id["active"].metadata["score_audit"]["final"] == {
         "acquisition_score": 9,
         "ecosystem_score": 6,
@@ -1348,7 +1490,7 @@ def test_t2_rescore_skips_events_already_on_current_profile(tmp_path, monkeypatc
         city="上海",
         url="https://example.com/done",
         status="changed",
-        metadata={"score_profile": "chatgpt_ads_v1"},
+        metadata={"score_profile": "chatgpt_ads_adjacent_v1"},
     )
     monkeypatch.setattr(
         "activity_radar.research._score_candidates",

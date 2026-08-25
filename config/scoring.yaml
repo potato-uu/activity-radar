@@ -25,14 +25,15 @@ platform_official_sources:
   - meta-china-marketing
   - tiktok-for-business-events
 webinar_in_push: true
-score_profile: chatgpt_ads_v1
+score_profile: chatgpt_ads_adjacent_v1
 weights:
   acquisition:
     p0: 0.65
     p1: 0.35
   ecosystem:
-    platform_presence: 0.55
-    channel_ecosystem: 0.45
+    platform_presence: 0.50
+    channel_ecosystem: 0.35
+    adjacent_industry: 0.15
 tier_rules:
   A: 8
   B: 6

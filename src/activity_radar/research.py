@@ -45,8 +45,8 @@ def score_prompt(candidates: list[dict[str, Any]], scoring: dict[str, Any]) -> s
     return f"""你是 ChatGPT Ads 活动评分员。temperature 必须不高于 0.2。按以下规则给每条活动独立打 acquisition_score 和 ecosystem_score（0-10），不合并：
 
 1. acquisition_score 表示 ChatGPT Ads 潜在买家密度。P0 权重 0.65：出海广告主、出海品牌 marketing 负责人、投放操盘手。P1 权重 0.35：有投放预算的独立站、亚马逊、Shopify 卖家。不要因为供给侧服务商或同类工具商多而提高获客分。
-2. ecosystem_score 由 platform_presence 0.55 和 channel_ecosystem 0.45 组成。platform_presence 的优先级是 OpenAI 官方 > 其他 AI 平台 > 广告平台（Google/Meta/TikTok）官方在场。channel_ecosystem 是可分销 ChatGPT Ads 的渠道：海外营销代理商、出海服务商、跨境物流/支付等已有客户群的服务商。
-3. reason 必须恰好两句中文，回答“这场会对卖 ChatGPT Ads 有什么用”。第一句只说有证据支持的买家或渠道谁会在场；第二句给具体动作，例如“适合带报价单现场约深聊”或“适合认识可分销的代理商”。不得编造参会者、官方在场或投放预算；证据不足时降分并明说不确定。
+2. ecosystem_score 由 platform_presence 0.50、channel_ecosystem 0.35 和 adjacent_industry 0.15 组成。platform_presence 的优先级是 OpenAI 官方 > 其他 AI 平台 > 广告平台（Google/Meta/TikTok）官方在场。channel_ecosystem 是可分销 ChatGPT Ads 的渠道：海外营销代理商、出海服务商、跨境物流/支付等已有客户群的服务商。adjacent_industry 表示 AI 行业大会、平台方开发者活动、出海生态圈层的相邻价值：即使没有直接买家但值得保持在场感，也给 2-5 分基础分；非广告主场合不打 0，但不得因此打到 A。
+3. reason 必须恰好两句中文，回答“这场会对卖 ChatGPT Ads 有什么用”。第一句只说有证据支持的买家、渠道或相邻圈层谁会在场；第二句给具体动作，例如“适合带报价单现场约深聊”或“适合认识可分销的代理商”。对只有相邻价值的活动，第二句写“在场感/圈层价值”，不要硬凑获客理由。不得编造参会者、官方在场或投放预算；证据不足时降分并明说不确定。
 action 只能是 attend/send_colleague/watch_content/host_side_event。
 
 配置：{json.dumps(scoring, ensure_ascii=False)}
@@ -231,13 +231,36 @@ def _event_rescore_candidate(event: Event) -> dict[str, Any]:
     return row
 
 
-def rescore_active_events(config: RadarConfig, events: list[Event]) -> tuple[list[Event], dict[str, Any]]:
+def _was_ab_before_vertical_profile(event: Event) -> bool:
+    """Return whether stored pre-chatgpt_ads_v1 scores ever reached A/B."""
+    for entry in event.score_history:
+        if entry.get("score_profile") == "chatgpt_ads_v1":
+            break
+        acquisition = float(entry.get("acquisition_score") or 0)
+        ecosystem = float(entry.get("ecosystem_score") or 0)
+        if max(acquisition, ecosystem) >= 6:
+            return True
+    return False
+
+
+def _rescore_current_events(
+    config: RadarConfig,
+    events: list[Event],
+    *,
+    selection_mode: str,
+) -> tuple[list[Event], dict[str, Any]]:
     """Re-score current events without losing prior scores or delta status."""
     rows = [deepcopy(event) for event in events]
-    score_profile = str(config.scoring.get("score_profile") or "chatgpt_ads_v1")
+    score_profile = str(config.scoring.get("score_profile") or "chatgpt_ads_adjacent_v1")
     current = [event for event in rows if event.status in {"active", "expected", "changed"}]
-    targets = [event for event in current if event.metadata.get("score_profile") != score_profile]
-    skipped_current_profile = len(current) - len(targets)
+    if selection_mode == "adjacent_value":
+        eligible = [event for event in current if event.tier == "D" and _was_ab_before_vertical_profile(event)]
+    elif selection_mode == "active":
+        eligible = current
+    else:
+        raise ValueError(f"unsupported rescore selection mode: {selection_mode}")
+    targets = [event for event in eligible if event.metadata.get("score_profile") != score_profile]
+    skipped_current_profile = len(eligible) - len(targets)
     before_tiers = Counter(event.tier for event in targets)
     pending_path = config.root / "data/events-rescore-unscored.jsonl"
     if not targets:
@@ -245,6 +268,7 @@ def rescore_active_events(config: RadarConfig, events: list[Event]) -> tuple[lis
         return rows, {
             "scoring_result": "empty",
             "score_profile": score_profile,
+            "selection_mode": selection_mode,
             "target_count": 0,
             "rescored_count": 0,
             "skipped_current_profile": skipped_current_profile,
@@ -369,6 +393,7 @@ def rescore_active_events(config: RadarConfig, events: list[Event]) -> tuple[lis
     stats = {
         "scoring_result": result,
         "score_profile": score_profile,
+        "selection_mode": selection_mode,
         "target_count": len(targets),
         "rescored_count": rescored_count,
         "skipped_current_profile": skipped_current_profile,
@@ -380,7 +405,7 @@ def rescore_active_events(config: RadarConfig, events: list[Event]) -> tuple[lis
         "score_failures": failures,
     }
     _log(config, {
-        "kind": "active_rescore_summary",
+        "kind": f"{selection_mode}_rescore_summary",
         "score_profile": score_profile,
         "target_count": len(targets),
         "rescored_count": rescored_count,
@@ -388,6 +413,14 @@ def rescore_active_events(config: RadarConfig, events: list[Event]) -> tuple[lis
         "scoring_result": result,
     })
     return rows, stats
+
+
+def rescore_active_events(config: RadarConfig, events: list[Event]) -> tuple[list[Event], dict[str, Any]]:
+    return _rescore_current_events(config, events, selection_mode="active")
+
+
+def rescore_adjacent_value_events(config: RadarConfig, events: list[Event]) -> tuple[list[Event], dict[str, Any]]:
+    return _rescore_current_events(config, events, selection_mode="adjacent_value")
 
 
 def _prefilter_for_scoring(config: RadarConfig, rows: list[dict[str, Any]], anchor: date) -> tuple[list[dict[str, Any]], dict[str, int]]:
