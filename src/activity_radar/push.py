@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -190,6 +191,59 @@ def _link_line(event: Event) -> str:
 def _is_rate_limit_error(error_text: str) -> bool:
     value = error_text.lower()
     return any(marker in value for marker in ("rate limit", "rate_limit", "cooldown", "too many requests", "429"))
+
+
+def _is_network_transient_error(error_text: str) -> bool:
+    """Return whether a delivery error is likely to clear on a short retry ladder."""
+    value = error_text.lower()
+    # A dead local proxy is handled by the one-shot direct-connect fallback;
+    # retrying it with the generic network ladder would add needless sends.
+    if LOCAL_PROXY_CONNECT_ERROR.lower() in value:
+        return False
+    return any(
+        marker in value
+        for marker in (
+            "connection reset",
+            "connection aborted",
+            "connection refused",
+            "connection timed out",
+            "connect timeout",
+            "read timeout",
+            "timed out",
+            "temporary failure",
+            "temporarily unavailable",
+            "network is unreachable",
+            "network error",
+            "cannot connect to host",
+            "server disconnected",
+            "remote end closed connection",
+            "unexpected_eof",
+            "unexpected eof",
+        )
+    )
+
+
+def _stdout_contains_error_json(stdout: str) -> bool:
+    """Detect an error object without treating arbitrary stdout as JSON."""
+    candidates = [stdout.strip(), *(line.strip() for line in stdout.splitlines())]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            payload = json.loads(candidate)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, dict) and "error" in payload:
+            return True
+    return False
+
+
+def _command_output(result: Any) -> tuple[str, str, str]:
+    """Return bounded stdout, stderr note, and the error text used for decisions."""
+    stdout = str(getattr(result, "stdout", "") or "").strip()[:500]
+    stderr_note = str(getattr(result, "stderr", "") or "").strip()[:500]
+    error_text = stdout if _stdout_contains_error_json(stdout) else (stderr_note or stdout)
+    return stdout, stderr_note, error_text
 
 
 def _number_label(index: int) -> str:
@@ -491,25 +545,26 @@ def send_via_hermes(
     sleep_fn = sleep_fn or time.sleep
     pending_indexes = [index for index in range(1, len(chunks) + 1) if str(index) not in sent]
     last_stdout = ""
+    last_stderr_note = ""
     for pending_position, index in enumerate(pending_indexes):
         chunk = chunks[index - 1]
         command = [executable, "send", "--to", target, "--file", "-", "--json"]
         direct_env: dict[str, str] | None = None
-        # iLink rate-limits bursts of consecutive messages. Permanent failures
-        # must fail immediately instead of sleeping through the retry window.
+        # Frequency-limit responses are left for the hourly scheduler. Short
+        # network interruptions retain the bounded 120/300 second retry ladder.
         for attempt, cooldown in enumerate((120, 300, None)):
             run_options: dict[str, Any] = {"input": chunk, "text": True, "capture_output": True, "check": False}
             if direct_env is not None:
                 run_options["env"] = direct_env
             result = subprocess.run(command, **run_options)
-            error_text = (result.stderr.strip() or result.stdout.strip())[:500]
+            stdout, stderr_note, error_text = _command_output(result)
             if result.returncode != 0 and direct_env is None and LOCAL_PROXY_CONNECT_ERROR in error_text:
                 direct_env = os.environ.copy()
                 for key in PROXY_ENV_KEYS:
                     direct_env.pop(key, None)
                 direct_env["NO_PROXY"] = "*"
                 result = subprocess.run(command, **run_options, env=direct_env)
-                error_text = (result.stderr.strip() or result.stdout.strip())[:500]
+                stdout, stderr_note, error_text = _command_output(result)
                 if result.returncode != 0 and LOCAL_PROXY_CONNECT_ERROR in error_text and log_path:
                     append_jsonl(log_path, {
                         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -522,11 +577,15 @@ def send_via_hermes(
                         "attempt": attempt + 1,
                         "returncode": result.returncode,
                         "error": error_text,
+                        "stdout": stdout,
+                        "stderr_note": stderr_note,
                     })
             if result.returncode == 0:
-                last_stdout = result.stdout.strip()
+                last_stdout = stdout
+                last_stderr_note = stderr_note
                 break
-            retry_cooldown = cooldown if _is_rate_limit_error(error_text) else None
+            is_rate_limit = _is_rate_limit_error(error_text)
+            retry_cooldown = cooldown if not is_rate_limit and _is_network_transient_error(error_text) else None
             if log_path:
                 append_jsonl(log_path, {
                     "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -541,6 +600,8 @@ def send_via_hermes(
                     "attempt": attempt + 1,
                     "returncode": result.returncode,
                     "error": error_text,
+                    "stdout": stdout,
+                    "stderr_note": stderr_note,
                 })
             if retry_cooldown is None:
                 raise RuntimeError(f"Hermes send failed ({result.returncode}) on chunk {index}/{len(chunks)} after {attempt + 1} attempts: {error_text}")
@@ -557,6 +618,8 @@ def send_via_hermes(
                 "chunk": index,
                 "chunk_count": len(chunks),
                 "attempt": attempt + 1,
+                "stdout": last_stdout,
+                "stderr_note": last_stderr_note,
             })
         if outbox_path and outbox is not None:
             sent[str(index)] = message_id
@@ -569,7 +632,17 @@ def send_via_hermes(
         success_marker.write_text("status=sent\n", encoding="utf-8")
     if outbox_path:
         outbox_path.unlink(missing_ok=True)
-    response = {"status": "sent", "message_id": message_id, "target": target, "chars": sum(len(chunk) for chunk in chunks), "chunks": len(chunks), "chunk_chars": [len(chunk) for chunk in chunks], "result": last_stdout}
+    response = {
+        "status": "sent",
+        "message_id": message_id,
+        "target": target,
+        "chars": sum(len(chunk) for chunk in chunks),
+        "chunks": len(chunks),
+        "chunk_chars": [len(chunk) for chunk in chunks],
+        "result": last_stdout,
+        "stdout": last_stdout,
+        "stderr_note": last_stderr_note,
+    }
     if log_path:
         append_jsonl(log_path, {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **response})
     return response

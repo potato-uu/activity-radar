@@ -340,10 +340,10 @@ def test_p4_hermes_stops_on_failed_chunk_and_logs_its_number(tmp_path, monkeypat
     log = tmp_path / "logs/push.jsonl"
     with pytest.raises(RuntimeError, match="chunk 2/"):
         send_via_hermes("A" * 1700 + "\n\n" + "B" * 1700 + "\n\n" + "C" * 1700, "weixin", dry_run=False, log_path=log, sleep_fn=lambda _seconds: None)
-    # Chunk 1 succeeds; chunk 2 is retried twice before the final failure.
-    assert calls == 4
+    # Chunk 1 succeeds; a rate-limit failure on chunk 2 is attempted once.
+    assert calls == 2
     rows = read_jsonl(log)
-    assert [r["status"] for r in rows] == ["sent", "retrying", "retrying", "failed"]
+    assert [r["status"] for r in rows] == ["sent", "failed"]
     assert rows[0]["chunk"] == 1
     assert all(r["chunk"] == 2 for r in rows[1:])
     assert len({r["message_id"] for r in rows}) == 1
@@ -668,8 +668,44 @@ def test_push_and_timeline_drop_invalid_entries_and_show_type_city_format(tmp_pa
     assert "Skip to main content" not in page
 
 
-def test_send_via_hermes_retries_rate_limited_chunk(tmp_path, monkeypatch):
-    """A chunk that fails once must be retried after a cooldown, then succeed."""
+def test_send_via_hermes_rate_limit_is_single_attempt_and_preserves_stdout_error(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from activity_radar import push as push_mod
+
+    calls = {"n": 0}
+    sleeps: list[int] = []
+    stdout = '{"error": "iLink sendmessage rate limited"}'
+    stderr = "rtk binary not found"
+
+    def fake_run(cmd, **kwargs):
+        calls["n"] += 1
+        return SimpleNamespace(returncode=1, stdout=stdout, stderr=stderr)
+
+    monkeypatch.setattr(push_mod.shutil, "which", lambda name: "/usr/bin/true")
+    monkeypatch.setattr(push_mod.subprocess, "run", fake_run)
+    log_path = tmp_path / "push.jsonl"
+    outbox = tmp_path / "push.outbox.json"
+    with pytest.raises(RuntimeError, match="after 1 attempts:.*rate limited"):
+        push_mod.send_via_hermes(
+            "hello",
+            "weixin",
+            dry_run=False,
+            log_path=log_path,
+            outbox_path=outbox,
+            sleep_fn=sleeps.append,
+        )
+
+    assert calls["n"] == 1
+    assert sleeps == []
+    assert outbox.exists()
+    rows = read_jsonl(log_path)
+    assert rows[-1]["status"] == "failed"
+    assert rows[-1]["error"] == stdout
+    assert rows[-1]["stdout"] == stdout
+    assert rows[-1]["stderr_note"] == stderr
+
+
+def test_send_via_hermes_retries_network_transient_with_existing_backoff(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from activity_radar import push as push_mod
 
@@ -678,19 +714,23 @@ def test_send_via_hermes_retries_rate_limited_chunk(tmp_path, monkeypatch):
 
     def fake_run(cmd, **kwargs):
         calls["n"] += 1
-        if calls["n"] == 1:
-            return SimpleNamespace(returncode=1, stdout='{"error": "iLink sendmessage rate limited"}', stderr="")
-        return SimpleNamespace(returncode=0, stdout='{"success": true}', stderr="")
+        if calls["n"] < 3:
+            return SimpleNamespace(returncode=1, stdout="", stderr="connection reset by peer")
+        return SimpleNamespace(returncode=0, stdout='{"success": true}', stderr="rtk binary not found")
 
     monkeypatch.setattr(push_mod.shutil, "which", lambda name: "/usr/bin/true")
     monkeypatch.setattr(push_mod.subprocess, "run", fake_run)
     log_path = tmp_path / "push.jsonl"
     result = push_mod.send_via_hermes("hello", "weixin", dry_run=False, log_path=log_path, sleep_fn=sleeps.append)
+
     assert result["status"] == "sent"
-    assert calls["n"] == 2
-    assert 120 in sleeps
-    rows = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
-    assert any(r.get("status") == "retrying" and "rate limited" in r.get("error", "") for r in rows)
+    assert calls["n"] == 3
+    assert sleeps == [120, 300]
+    rows = read_jsonl(log_path)
+    assert [row["status"] for row in rows] == ["retrying", "retrying", "sent", "sent"]
+    assert rows[0]["error"] == "connection reset by peer"
+    assert rows[0]["stderr_note"] == "connection reset by peer"
+    assert rows[2]["stderr_note"] == "rtk binary not found"
 
 
 def test_send_via_hermes_does_not_retry_permanent_failure(tmp_path, monkeypatch):
@@ -804,20 +844,19 @@ def test_proxy_bypass_does_not_consume_rate_limit_retry(tmp_path, monkeypatch):
     monkeypatch.setattr(push_mod.shutil, "which", lambda _name: "/fake/hermes")
     monkeypatch.setattr(push_mod.subprocess, "run", fake_run)
 
-    result = send_via_hermes(
-        "hello",
-        "weixin",
-        dry_run=False,
-        log_path=tmp_path / "push.jsonl",
-        sleep_fn=sleeps.append,
-    )
+    with pytest.raises(RuntimeError, match="after 1 attempts:.*rate limited"):
+        send_via_hermes(
+            "hello",
+            "weixin",
+            dry_run=False,
+            log_path=tmp_path / "push.jsonl",
+            sleep_fn=sleeps.append,
+        )
 
-    assert result["status"] == "sent"
-    assert len(calls) == 3
+    assert len(calls) == 2
     assert "env" not in calls[0]
     assert calls[1]["env"]["NO_PROXY"] == "*"
-    assert calls[2]["env"]["NO_PROXY"] == "*"
-    assert sleeps == [120]
+    assert sleeps == []
 
 
 def test_auto_mode_catches_up_later_same_day():

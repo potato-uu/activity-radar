@@ -727,3 +727,25 @@ live 真新增（不混入上表的原始 cohort）：
 - 数据/展示/报告：`data/events.jsonl`、`site/index.html`、`data/push-latest.txt`、`data/push-history/20260825T115609Z-chatgpt-ads-rerank.txt`、`PROGRESS-v2.md`。
 - 建议提交信息：`feat: retain adjacent value in activity scoring`；由外层精确 stage，不包含 `.env`、`logs/*.jsonl` 或 `/tmp/activity-radar-events-before-adjacent-20260825.jsonl`。
 - 未执行任何 git 写操作；未外发、未调用 Hermes、未启动 Chromium、未抓网页、未登录或绕过保护；未打印、复制或写入密钥。
+
+## 频控退避 Report
+
+时间：2026-08-25 20:14 PDT
+终态：`completed`（仅本地代码、mock 单测与静态检查；未调用真实 Hermes，未外发）
+
+### §18 验收
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| 错误观测 | Passed | `send_via_hermes` 对 subprocess 输出做结构化识别：stdout 含 `{"error": ...}` 时优先作为 `error`；stderr 独立写入 `stderr_note`。失败与成功 chunk 日志、最终 `push.jsonl` 响应均保留 `stdout`/`stderr_note`。 |
+| 频控退避 | Passed | `_is_rate_limit_error` 命中时只执行单次尝试，记录 `status=failed` 后退出；不调用 120/300 秒 `sleep_fn`，传入 `outbox_path` 时 outbox 保留。 |
+| 网络瞬断 | Passed | 非频控且命中网络瞬断标记时继续使用 120 秒、300 秒阶梯；代理不可达特征仍只走一次直连旁路，不叠加通用网络重试。 |
+| 单测 | Passed | 先运行旧实现得到 4 个预期失败；实现后定向 Hermes/代理回归 `9 passed`，最终全套 `124 passed in 3.09s`。 |
+
+### 产出与边界
+
+- 修改：`src/activity_radar/push.py`、`tests/test_repairs.py`、本报告。
+- 验证：`.venv/bin/python -m compileall -q src tests`、`git diff --check` 均退出 0。
+- 未验证：真实 iLink 半天级频控窗口、真实 Hermes stderr 插件行为；本轮没有真实发送授权，不以 mock 结果替代线上证据。
+- 禁区遵守：未联网、未抓网页、未启动 Chromium、未调用 Hermes、未外发消息、未读取/打印/写入密钥，未执行 `git add/commit/rebase/checkout/push`。
+- 建议提交信息：`fix: make Hermes rate-limit retries scheduler-driven`；由外层精确提交，不包含运行日志或环境文件。
