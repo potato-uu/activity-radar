@@ -1,0 +1,77 @@
+📡 BD 活动雷达｜8/30 全量
+
+⭐ 必看（A 级）
+
+① 8/30 周日｜出海会客厅：亚马逊云科技 × Gingiris 上海场
+获客5 资源8｜展会·上海·公开
+这里有亚马逊云科技官方在场，且联合方是做出海和创业服务的。
+🔗 https://onepilot.xin/events/builderlab%3A0d01ce3b6574dbd8817b053b/register
+
+② 9/1 周二｜9/1 知外×领英×融创云，共探AI出海局
+获客8 资源6｜展会·上海·公开
+公开信息显示会场主要是科技品牌负责人、出海营销从业者和相关合作方。
+🔗 https://onepilot.xin/events/xiaohongshu%3A9a1ef66a663531fc84d84303/register
+
+③ 9月（日期待官宣）｜CCEE 雨果跨境电商选品大会
+获客8 资源6｜峰会·上海·公开
+有证据显示会有跨境卖家、品牌方和服务生态在场。
+🔗 https://www.cifnews.com/
+
+④ 9/5 周六｜微信开发者创新工坊｜上海站：与 AI 共生小程序开发者交流 ⚠️
+获客2 资源8｜沙龙·上海·闭门
+标题和介绍都指向微信小程序开发者、AI 应用创业者和产品团队。
+🔗 https://onepilot.xin/events/manual-feishu-wechat-dev-workshop-shanghai-20260905/register
+
+⑤ 9/10 周四｜第十二届 GDMS 全球数字营销峰会
+获客8 资源7｜峰会·上海·公开
+证据显示这是全球数字营销峰会，但候选信息未列明出海广告主。
+🔗 https://www.gdmschina.com/register/meeting_place
+
+⑥ 10月（日期待官宣）｜2026 金投赏
+获客8 资源7｜峰会·上海·公开
+会有广告主、品牌 marketing 负责人和代理商集中。
+🔗 https://www.roifestival.com/
+
+⑦ 11/7 周六｜⚡️ 2026 Google Devfest 谷歌开发者节 ⚠️
+获客2 资源8.8｜开发者大会·上海·公开
+现有信息证明上海GDG开发者活动在场，但不是 Google Ads 官方活动。
+🔗 https://onepilot.xin/events/huodongxing%3Aaa63dbbd7cce324ea5e20253/register
+
+⑧ 12月（日期待官宣）｜亚马逊全球开店卖家峰会
+获客8 资源6｜峰会·上海·公开
+有证据显示亚马逊卖家和出海品牌负责人会集中出现。
+🔗 https://gs.amazon.cn/
+
+⑨ 12月（日期待官宣）｜亿邦跨境与未来零售大会
+获客8 资源6｜峰会·上海·公开
+有证据显示出海品牌、零售决策者和渠道生态会在场。
+🔗 https://www.ebrun.com/
+
+📅 值得排期（B 级·未来 4 周）
+
+· 9/1 周二（每周，下一场 9/8）｜AI+生态招商沙龙｜周二场｜获客6
+🔗 https://onepilot.xin/events/manual-ai-ecology-investment-salon-yangpu-20260901/register
+· 9/9 周三｜Inclusion·外滩大会｜获客4
+🔗 https://onepilot.xin/events/deepseekclub%3A3148f5aff3b7dbfb58ec909f/register
+· 9/12 周六｜AI Maker Summit · 2026 上海｜获客2
+🔗 https://onepilot.xin/events/327a1ee4-2b0f-4f74-bd4c-ebed3d771678/register
+· 9/16 周三｜2026杭州出口跨境电商博览会｜获客6
+🔗 https://www.ecee-expo.com/hangzhou-wjhg
+· 9/17 周四｜East Forward·2026 企业出海大会｜获客7
+🔗 https://eu.36kr.com/zh/p/3944484330355844
+· 9/17 周四｜华为全联接大会2026 ⚠️｜获客2
+🔗 https://www.huawei.com/cn/events/huaweiconnect
+· 9/22 周二｜2026云栖大会 ⚠️｜获客4.4
+🔗 https://yunqi.aliyun.com/
+
+🎪 side event 机会
+
+· 9/10 周四｜第十二届 GDMS 全球数字营销峰会｜获客8
+🔗 https://www.gdmschina.com/register/meeting_place
+· 9/9 周三｜Inclusion·外滩大会｜获客4
+🔗 https://onepilot.xin/events/deepseekclub%3A3148f5aff3b7dbfb58ec909f/register
+· 9/12 周六｜AI Maker Summit · 2026 上海｜获客2
+🔗 https://onepilot.xin/events/327a1ee4-2b0f-4f74-bd4c-ebed3d771678/register
+
+🌐 完整时间轴 https://potato-uu.github.io/activity-radar/
+🩺 源健康：连续 4 周无 hit：无；新源观察中：11 个；unavailable/异常：10times, baidu-ai-events, brandstar, eventbrite-shanghai-ai, huodongxing, llm-sweep, luma-shanghai-ai, meetup-shanghai-ai, meta-china-marketing, microsoft-reactor-shanghai, morketing, mosu-space, openai-news-events, wechat-search
