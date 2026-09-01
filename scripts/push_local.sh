@@ -7,11 +7,21 @@ cd "$ROOT"
 
 git checkout -- logs data site 2>/dev/null || git checkout -- data site 2>/dev/null || true
 export RADAR_GIT_PULL_FAILED=0
+export RADAR_GIT_PULL_ERROR=""
 PULL_SUCCEEDED=1
-if ! git pull --ff-only; then
-  export RADAR_GIT_PULL_FAILED=1
-  PULL_SUCCEEDED=0
-  echo "[push_local] git pull --ff-only failed; continuing with local data" >&2
+if ! PULL_OUTPUT="$(git pull --ff-only 2>&1)"; then
+  echo "$PULL_OUTPUT" >&2
+  DIRECT_PULL_OUTPUT=""
+  if DIRECT_PULL_OUTPUT="$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY git pull --ff-only 2>&1)"; then
+    echo "$DIRECT_PULL_OUTPUT"
+  else
+    echo "$DIRECT_PULL_OUTPUT" >&2
+    export RADAR_GIT_PULL_FAILED=1
+    PULL_SUCCEEDED=0
+    PULL_ERROR="$(printf '%s\n%s' "$PULL_OUTPUT" "$DIRECT_PULL_OUTPUT" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
+    export RADAR_GIT_PULL_ERROR="${PULL_ERROR[1,500]}"
+    echo "[push_local] git pull failed with proxy and direct environments; continuing with local data" >&2
+  fi
 fi
 
 export RADAR_DEPENDENCY_UPDATE_FAILED=0

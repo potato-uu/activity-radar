@@ -78,6 +78,22 @@ def auto_delivery_paths(config: RadarConfig, now: datetime, mode: str) -> tuple[
     return history / f"{day}-{mode}.outbox.json", history / f"{day}-{mode}.success"
 
 
+def pending_auto_outboxes(config: RadarConfig) -> list[tuple[Path, Path, str, date]]:
+    """Return unfinished automatic deliveries oldest-first, including prior days."""
+    history = config.root / "data/push-history"
+    pending: list[tuple[Path, Path, str, date]] = []
+    for path in sorted(history.glob("????-??-??-*.outbox.json")):
+        match = re.match(r"^(\d{4}-\d{2}-\d{2})-(full|delta)\.outbox\.json$", path.name)
+        if not match:
+            continue
+        try:
+            day = date.fromisoformat(match.group(1))
+        except ValueError:
+            continue
+        pending.append((path, history / f"{match.group(1)}-{match.group(2)}.success", match.group(2), day))
+    return pending
+
+
 def research_freshness(config: RadarConfig, now: datetime, mode: str) -> tuple[str, str | None]:
     """Classify scheduled research as fresh, waiting, or stale in Shanghai time."""
     local = _shanghai_time(now)
@@ -654,9 +670,10 @@ def _write_outbox(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def record_auto_success(config: RadarConfig, mode: str, now: datetime | None = None) -> None:
+def record_auto_success(config: RadarConfig, mode: str, now: datetime | None = None, marker_date: date | None = None) -> None:
     local = _shanghai_time(now)
-    marker = config.root / "data/push-history" / f"{local.date().isoformat()}-{mode}.success"
+    completed_date = marker_date or local.date()
+    marker = config.root / "data/push-history" / f"{completed_date.isoformat()}-{mode}.success"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text("status=sent\n", encoding="utf-8")
     append_jsonl(config.root / "logs/push.jsonl", {
@@ -664,7 +681,7 @@ def record_auto_success(config: RadarConfig, mode: str, now: datetime | None = N
         "kind": "auto_push",
         "status": "sent",
         "mode": mode,
-        "shanghai_date": local.date().isoformat(),
+        "shanghai_date": completed_date.isoformat(),
     })
 
 

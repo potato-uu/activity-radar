@@ -1096,6 +1096,25 @@ def test_s2_auto_push_resumes_outbox_before_freshness_gate(tmp_path, monkeypatch
     assert (root / "data/push-history/2026-08-23-full.success").exists()
 
 
+def test_s2_auto_push_resumes_previous_day_outbox(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    root = isolated_root(tmp_path)
+    outbox = root / "data/push-history/2026-08-23-full.outbox.json"
+    outbox.parent.mkdir(parents=True)
+    chunk = "（1/1）\nold stable content"
+    outbox.write_text(json.dumps({"chunks": [chunk], "sent": {}, "created_at": "2026-08-23T10:00:00+00:00"}), encoding="utf-8")
+    sent = []
+    monkeypatch.setattr("activity_radar.cli._utc_now", lambda: datetime(2026, 8, 24, 0, 30, tzinfo=timezone.utc))
+    monkeypatch.setattr(push_mod.shutil, "which", lambda _name: "/fake/hermes")
+    monkeypatch.setattr(push_mod.subprocess, "run", lambda *_args, **kwargs: sent.append(kwargs["input"]) or SimpleNamespace(returncode=0, stdout="ok", stderr=""))
+    assert main(["--root", str(root), "push", "--auto", "--send"]) == 0
+    capsys.readouterr()
+    assert sent == [chunk]
+    assert not outbox.exists()
+    assert (root / "data/push-history/2026-08-23-full.success").exists()
+
+
 def test_s2_outbox_files_are_ignored():
     assert "data/push-history/*.outbox.json" in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
 

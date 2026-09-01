@@ -17,6 +17,7 @@ from .push import (
     auto_mode,
     build_push_for_config,
     has_successful_auto_run,
+    pending_auto_outboxes,
     record_auto_success,
     research_freshness,
     send_via_hermes,
@@ -153,7 +154,7 @@ def cmd_push(args: argparse.Namespace) -> int:
             "timestamp": now.isoformat(timespec="seconds"),
             "kind": "pull_failed",
             "status": "failed",
-            "error": "git pull --ff-only failed; using local data",
+            "error": os.getenv("RADAR_GIT_PULL_ERROR") or "git pull --ff-only failed; using local data",
         })
     if dependency_update_failed:
         append_jsonl(config.root / "logs/push.jsonl", {
@@ -164,6 +165,23 @@ def cmd_push(args: argparse.Namespace) -> int:
         })
     mode = args.mode
     if args.auto:
+        if args.send:
+            pending = pending_auto_outboxes(config)
+            if pending:
+                outbox_path, success_marker, pending_mode, pending_date = pending[0]
+                result = send_via_hermes(
+                    "",
+                    config.push_target,
+                    dry_run=False,
+                    log_path=config.root / "logs/push.jsonl",
+                    outbox_path=outbox_path,
+                    success_marker=success_marker,
+                )
+                if result.get("status") == "sent":
+                    record_auto_success(config, pending_mode, now, marker_date=pending_date)
+                result["artifacts"] = {"outbox": str(outbox_path), "resumed": True, "mode": pending_mode}
+                print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+                return 0
         mode = auto_mode(now)
         if mode is None:
             print("skip")
@@ -172,19 +190,6 @@ def cmd_push(args: argparse.Namespace) -> int:
             print("skip")
             return 0
         outbox_path, success_marker = auto_delivery_paths(config, now, mode)
-        if outbox_path.exists() and args.send:
-            result = send_via_hermes(
-                "",
-                config.push_target,
-                dry_run=False,
-                log_path=config.root / "logs/push.jsonl",
-                outbox_path=outbox_path,
-                success_marker=success_marker,
-            )
-            record_auto_success(config, mode, now)
-            result["artifacts"] = {"outbox": str(outbox_path), "resumed": True}
-            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
-            return 0
         freshness, freshness_warning = research_freshness(config, now, mode)
         if freshness == "waiting":
             append_jsonl(config.root / "logs/push.jsonl", {
